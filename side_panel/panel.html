@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J.T.Rx</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+
+  <header>
+    <div class="logo">J.T.<span>Rx</span></div>
+    <div id="pharmacy-name" class="pharmacy-name"></div>
+  </header>
+
+  <main id="app">
+
+    <!-- ── No patient loaded ── -->
+    <div id="view-no-patient" class="view active">
+      <div class="empty-state">
+        <div class="empty-icon">👤</div>
+        <p>Aucun patient ouvert</p>
+        <span>Ouvrez un dossier dans Priorx</span>
+      </div>
+    </div>
+
+    <!-- ── Loading ── -->
+    <div id="view-loading" class="view">
+      <div class="patient-card loading">
+        <div class="patient-name skeleton"></div>
+        <div class="patient-sub skeleton"></div>
+      </div>
+      <div class="loading-msg">Vérification du consentement…</div>
+    </div>
+
+    <!-- ── No phone in DOM yet ── -->
+    <div id="view-no-phone" class="view">
+      <div class="patient-card">
+        <div class="patient-name" id="np-name"></div>
+      </div>
+      <div class="info-msg">
+        ⚠️ Numéro de téléphone introuvable dans le dossier.
+      </div>
+    </div>
+
+    <!-- ── UNKNOWN — consent prompt ── -->
+    <div id="view-unknown" class="view">
+      <div class="patient-card">
+        <div class="patient-name" id="un-name"></div>
+        <div class="patient-phone" id="un-phone"></div>
+      </div>
+      <div class="prompt-box">
+        <p class="prompt-question">
+          Demandez au patient s'il souhaite recevoir un SMS lorsque son ordonnance est prête.
+        </p>
+        <div class="prompt-buttons">
+          <button id="btn-oui" class="btn btn-yes">✓ Oui</button>
+          <button id="btn-non" class="btn btn-no">✗ Non</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── OPTED IN ── -->
+    <div id="view-opted-in" class="view">
+      <div class="patient-card">
+        <div class="patient-name" id="oi-name"></div>
+        <div class="patient-phone" id="oi-phone"></div>
+        <div class="consent-badge yes">✓ Consentement SMS</div>
+      </div>
+
+      <div id="notify-area">
+        <button id="btn-notify" class="btn btn-notify">
+          📱 Notifier le patient
+        </button>
+      </div>
+
+      <!-- Confirmation step (hidden by default) -->
+      <div id="notify-confirm" class="confirm-box hidden">
+        <p>Envoyer la notification SMS à ce patient?</p>
+        <div class="confirm-buttons">
+          <button id="btn-confirm-yes" class="btn btn-yes">Oui, envoyer</button>
+          <button id="btn-confirm-no"  class="btn btn-ghost">Annuler</button>
+        </div>
+      </div>
+
+      <!-- Success feedback (hidden by default) -->
+      <div id="notify-success" class="success-box hidden">
+        ✓ SMS envoyé avec succès
+      </div>
+
+      <div class="secondary-actions">
+        <button id="btn-revoke" class="btn-link">Retirer le consentement</button>
+      </div>
+    </div>
+
+    <!-- ── OPTED OUT ── -->
+    <div id="view-opted-out" class="view">
+      <div class="patient-card">
+        <div class="patient-name" id="oo-name"></div>
+        <div class="patient-phone" id="oo-phone"></div>
+        <div class="consent-badge no">✗ Notifications refusées</div>
+      </div>
+      <div class="info-msg muted">
+        Ce patient ne recevra pas de notifications SMS.
+      </div>
+      <div class="secondary-actions">
+        <button id="btn-change-consent" class="btn-link">Modifier le consentement</button>
+      </div>
+    </div>
+
+    <!-- ── Validation prompt (overlays current view) ── -->
+    <div id="view-validation-prompt" class="view overlay hidden">
+      <div class="validation-card">
+        <div class="validation-icon">💊</div>
+        <p class="validation-title">Ordonnance validée</p>
+        <p class="validation-sub" id="vp-name"></p>
+        <button id="btn-validation-send" class="btn btn-notify full-width">
+          📱 Envoyer notification
+        </button>
+        <button id="btn-validation-dismiss" class="btn-link small">
+          Ne pas envoyer
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Error ── -->
+    <div id="view-error" class="view">
+      <div class="error-box">
+        <p>⚠️ Erreur de connexion</p>
+        <span id="error-msg"></span>
+        <button id="btn-retry" class="btn btn-ghost">Réessayer</button>
+      </div>
+    </div>
+
+  </main>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

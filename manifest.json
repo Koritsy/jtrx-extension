@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "J.T.Rx — Companion Pharmacie",
+  "version": "1.0.0",
+  "description": "Système de notifications SMS pour les ordonnances prêtes — JT Automatisation",
+
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "*://*/*index.aspx*"
+  ],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["*://*/*index.aspx*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "side_panel": {
+    "default_path": "side_panel/panel.html"
+  },
+
+  "action": {
+    "default_title": "J.T.Rx",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

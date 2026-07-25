@@ -1,0 +1,10 @@
+# Never commit pharmacy credentials
+config.js
+
+# Build artifacts
+dist/
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
