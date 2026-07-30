@@ -10,14 +10,15 @@
 
   function readPatientFromDOM() {
     const lastName  = document.getElementById('BA01_LastName')?.textContent?.trim() || '';
-    const firstName = document.getElementById('BA01_FirstName')?.textContent?.trim() || '';
+    // BA01_FirstName contains ", Josianne" (leading comma from Priorx) — strip it
+    const firstName = (document.getElementById('BA01_FirstName')?.textContent?.trim() || '').replace(/^,\s*/, '');
     const info2     = document.getElementById('BA01_Info2')?.textContent?.trim() || '';
     const user      = document.getElementById('LoginName1')?.textContent?.trim() || '';
 
-    // Extract phone number from BA01_Info2.
-    // Format is typically "(450) 123-4567" or "450-123-4567" — strip to digits only.
-    // TODO: confirm exact format at pharmacy (may also be in BA01_Info).
-    const phoneRaw = info2.replace(/\D/g, '');
+    // BA01_Info2 format confirmed: "438.524.6123 - 168 rue Louise-Bernard, Beloeil"
+    // Split on " - " first to isolate phone from address, then strip non-digits.
+    const phonePart = info2.split(' - ')[0].trim();
+    const phoneRaw  = phonePart.replace(/\D/g, '');
 
     return { lastName, firstName, phoneRaw, user };
   }
