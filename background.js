@@ -59,10 +59,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // async
 
     case 'RETRY_PATIENT': {
-      const state = tabState[tabId];
-      if (state?.patient) {
-        // Re-fetch consent from DB — don't trust stale cache
-        handlePatientChanged(tabId, state.patient);
+      const patient = tabState[tabId]?.patient ?? msg.patient;
+      if (patient) {
+        handlePatientChanged(tabId, patient);
       } else {
         broadcastToPanel({ type: 'STATE_UPDATE', state: 'NO_PATIENT' });
       }

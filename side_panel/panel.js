@@ -61,8 +61,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     case 'NOTIFY_ERROR':
       resetNotifyUI();
       if (msg.consentRevoked) {
-        // Patient replied STOP since last check — refresh to show OPTED_OUT
-        chrome.runtime.sendMessage({ type: 'RETRY_PATIENT' });
+        chrome.runtime.sendMessage({ type: 'RETRY_PATIENT', patient: currentPatient });
       } else {
         document.getElementById('error-msg').textContent = msg.error || '';
         showView('error');
@@ -72,6 +71,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 function applyState(msg) {
+  document.getElementById('reinscription-notice')?.classList.add('hidden');
   const p = msg.patient;
 
   switch (msg.state) {
@@ -199,6 +199,7 @@ document.getElementById('btn-retry').addEventListener('click', () => {
 // ── API calls (routed through background.js) ──────────────────────────────
 
 function saveConsent(consent) {
+  const wasOptedOut = currentState === 'OPTED_OUT';
   showView('loading');
   chrome.runtime.sendMessage({
     type: 'CONSENT_SAVE',
@@ -207,6 +208,12 @@ function saveConsent(consent) {
     if (!response?.ok) {
       document.getElementById('error-msg').textContent = response?.error || '';
       showView('error');
+    } else if (consent === 'yes' && wasOptedOut) {
+      // Patient was previously STOP'd — Twilio still has them opted out
+      // Show reminder to ask patient to text INSCRIPTION
+      document.getElementById('reinscription-notice').classList.remove('hidden');
+    } else {
+      document.getElementById('reinscription-notice').classList.add('hidden');
     }
   });
 }
