@@ -4,210 +4,72 @@
   <meta charset="UTF-8" />
   <title>J.T.Rx — Test</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #f0f2f5; padding: 20px; }
+    body { font-family: system-ui; max-width: 400px; margin: 60px auto; padding: 0 20px; }
+    h2 { font-size: 16px; margin-bottom: 20px; color: #1a237e; }
+    p  { font-size: 13px; color: #555; margin-bottom: 20px; line-height: 1.5; }
 
-    h2 { font-size: 13px; font-weight: 700; color: #555; text-transform: uppercase;
-         letter-spacing: .5px; margin-bottom: 12px; }
+    .card { background: #f5f7ff; border: 1px solid #c5cae9; border-radius: 10px;
+            padding: 14px 16px; margin-bottom: 20px; min-height: 70px; }
+    .card-name { font-size: 16px; font-weight: 700; color: #1a237e; }
+    .card-info { font-size: 13px; color: #555; margin-top: 4px; }
 
-    .section { background: white; border-radius: 12px; padding: 20px;
-               margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    button { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px;
+             font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
+    .load  { background: #1a237e; color: white; }
+    .clear { background: #ffebee; color: #c62828; }
 
-    /* Step 1 — DOM fields (read by content.js) */
-    .patient-card { background: #f8f9ff; border: 2px dashed #c5cae9;
-                    border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
-    .patient-card label { font-size: 11px; color: #888; display: block; margin-bottom: 2px; }
-    #BA01_LastName, #BA01_FirstName, #BA01_Info2 {
-      font-size: 15px; font-weight: 600; color: #1a237e; min-height: 22px; }
-    #LoginName1 { font-size: 13px; color: #555; }
-
-    /* Buttons */
-    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    button {
-      padding: 9px 16px; border: none; border-radius: 8px; font-size: 14px;
-      font-weight: 600; cursor: pointer; transition: opacity .15s;
-    }
-    button:hover { opacity: .85; }
-    .btn-primary { background: #1a237e; color: white; }
-    .btn-danger  { background: #c62828; color: white; }
-    .btn-gray    { background: #e0e0e0; color: #333; }
-
-    /* Status log */
-    #log { background: #1a1a2e; border-radius: 8px; padding: 14px 16px;
-           font-family: monospace; font-size: 13px; color: #a5d6a7;
-           min-height: 80px; max-height: 200px; overflow-y: auto; }
-    #log .err { color: #ef9a9a; }
-    #log .info { color: #81d4fa; }
-
-    /* Direct API test */
-    .api-result { margin-top: 10px; padding: 10px 14px; border-radius: 8px;
-                  font-size: 13px; font-family: monospace; display: none; }
-    .api-result.ok  { background: #e8f5e9; color: #2e7d32; display: block; }
-    .api-result.err { background: #ffebee; color: #c62828; display: block; }
-
-    input[type=text] { padding: 8px 12px; border: 1.5px solid #ddd; border-radius: 8px;
-                       font-size: 14px; width: 100%; margin-bottom: 8px; }
-    input[type=text]:focus { outline: none; border-color: #1a237e; }
+    /* Hidden Priorx DOM — content.js reads these */
+    #priorx { display: none; }
   </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════
-     STEP 1 — DOM fields that content.js reads
-     ════════════════════════════════════════════ -->
-<div class="section">
-  <h2>① Dossier patient (lu par content.js)</h2>
-  <div class="patient-card">
-    <label>BA01_LastName</label>
+  <h2>J.T.Rx — Page de test</h2>
+  <p>
+    Clique <strong>Charger patient</strong>, puis ouvre le panneau latéral
+    en cliquant sur l'icône J.T.Rx dans la barre d'outils de ton navigateur.
+  </p>
+
+  <!-- Visible preview -->
+  <div class="card">
+    <div class="card-name" id="preview-name">Aucun patient chargé</div>
+    <div class="card-info" id="preview-info"></div>
+  </div>
+
+  <button class="load"  onclick="load()">Charger patient (toi)</button>
+  <button class="clear" onclick="clear()">✕ Effacer le patient</button>
+
+  <!-- Hidden Priorx DOM read by content.js -->
+  <div id="priorx">
     <div id="BA01_LastName"></div>
-    <label style="margin-top:6px">BA01_FirstName</label>
     <div id="BA01_FirstName"></div>
-    <label style="margin-top:6px">BA01_Info2 (téléphone + adresse)</label>
     <div id="BA01_Info2"></div>
-    <label style="margin-top:6px">LoginName1</label>
     <div id="LoginName1">jositr</div>
   </div>
 
-  <div class="btn-row">
-    <button class="btn-primary" onclick="loadPatient('Tremblay',', Josianne','438.524.6123 - 168 rue Louise-Bernard, Beloeil')">
-      👤 Ton profil (SMS réel)
-    </button>
-    <button class="btn-gray" onclick="loadPatient('Dupont',', Marie','450.555.0100 - 12 rue Test, Beloeil')">
-      Nouveau patient
-    </button>
-    <button class="btn-danger" onclick="clearPatient()">✕ Quitter patient</button>
-  </div>
-</div>
+  <script>
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      while (el.firstChild) el.removeChild(el.firstChild);
+      if (value) el.appendChild(document.createTextNode(value));
+    }
 
-<!-- ═══════════════════════════════════════════
-     STEP 2 — Status log from content.js
-     ════════════════════════════════════════════ -->
-<div class="section">
-  <h2>② Log content.js → background</h2>
-  <div id="log">En attente de chargement d'un patient…</div>
-</div>
+    function load() {
+      setText('BA01_FirstName', ', Josianne');
+      setText('BA01_Info2', '438.524.6123 - 168 rue Louise-Bernard, Beloeil');
+      // Fire lastName last — content.js watches this one
+      setTimeout(() => {
+        setText('BA01_LastName', 'Tremblay');
+        document.getElementById('preview-name').textContent = 'TREMBLAY, Josianne';
+        document.getElementById('preview-info').textContent = '438.524.6123 — 168 rue Louise-Bernard, Beloeil';
+      }, 50);
+    }
 
-<!-- ═══════════════════════════════════════════
-     STEP 3 — Direct API tests (no extension needed)
-     ════════════════════════════════════════════ -->
-<div class="section">
-  <h2>③ Tests API directs (backend AWS)</h2>
-  <p style="font-size:13px;color:#888;margin-bottom:12px">
-    Ces tests appellent ton API directement — indépendant de l'extension.
-    Si ça marche ici mais pas dans le panneau, le problème est dans l'extension.
-  </p>
-
-  <input type="text" id="api-phone" value="4385246123" placeholder="Numéro de téléphone (10 chiffres)" />
-
-  <div class="btn-row" style="margin-bottom:10px">
-    <button class="btn-gray" onclick="apiCheckConsent()">GET /consent</button>
-    <button class="btn-gray" onclick="apiSaveYes()">POST consent=yes</button>
-    <button class="btn-gray" onclick="apiSaveNo()">POST consent=no</button>
-    <button class="btn-primary" onclick="apiNotify()">📱 Envoyer SMS</button>
-  </div>
-  <div id="api-result" class="api-result"></div>
-</div>
-
-<script>
-// ── Config (same values as config.js) ────────────────────────
-const API_BASE = 'https://7n6odr9zk8.execute-api.ca-central-1.amazonaws.com/prod';
-const API_KEY  = 'HY0mK8uqhqhxsP8DuVNt7FnCHOIkSY92vSCKPtP4';
-const PHARMACY = 'familiprix-beloeil-2786';
-
-// ── DOM mutation helpers ──────────────────────────────────────
-function setText(id, value) {
-  const el = document.getElementById(id);
-  // Remove all existing child nodes
-  while (el.firstChild) el.removeChild(el.firstChild);
-  // Append a fresh text node — this is a real childList mutation
-  if (value) el.appendChild(document.createTextNode(value));
-}
-
-function loadPatient(last, first, info2) {
-  // Set fields one tick apart so MutationObserver fires on lastName
-  setText('BA01_FirstName', first);
-  setText('BA01_Info2', info2);
-  setTimeout(() => setText('BA01_LastName', last), 50);
-  appendLog(`Chargement → ${last}${first} | ${info2.split(' - ')[0]}`);
-}
-
-function clearPatient() {
-  ['BA01_LastName','BA01_FirstName','BA01_Info2'].forEach(id => setText(id, ''));
-  appendLog('Patient effacé');
-}
-
-// ── Log helper ────────────────────────────────────────────────
-function appendLog(msg, type = '') {
-  const log = document.getElementById('log');
-  const line = document.createElement('div');
-  if (type) line.className = type;
-  line.textContent = `[${new Date().toLocaleTimeString('fr-CA')}] ${msg}`;
-  log.appendChild(line);
-  log.scrollTop = log.scrollHeight;
-}
-
-// Listen for messages from content.js (if extension is loaded)
-window.addEventListener('message', e => {
-  if (e.data?.from === 'jtrx-content') {
-    appendLog(`content.js → ${JSON.stringify(e.data.payload)}`, 'info');
-  }
-});
-
-// ── Direct API calls ──────────────────────────────────────────
-function getPhone() {
-  return document.getElementById('api-phone').value.replace(/\D/g,'');
-}
-
-function showResult(ok, text) {
-  const el = document.getElementById('api-result');
-  el.className = 'api-result ' + (ok ? 'ok' : 'err');
-  el.textContent = text;
-}
-
-async function apiCheckConsent() {
-  showResult(true, 'Envoi…');
-  try {
-    const r = await fetch(`${API_BASE}/consent/${getPhone()}`, {
-      headers: { 'X-Api-Key': API_KEY, 'X-Pharmacy-Id': PHARMACY }
-    });
-    const d = await r.json();
-    showResult(r.ok, JSON.stringify(d, null, 2));
-    appendLog(`GET consent → ${d.consent ?? 'null (UNKNOWN)'}`, d.consent ? '' : 'info');
-  } catch(e) { showResult(false, e.message); }
-}
-
-async function apiSaveConsent(consent) {
-  showResult(true, 'Envoi…');
-  try {
-    const r = await fetch(`${API_BASE}/consent`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'X-Api-Key': API_KEY, 'X-Pharmacy-Id': PHARMACY },
-      body: JSON.stringify({ phone_number: getPhone(), consent, recorded_by: 'jositr' })
-    });
-    const d = await r.json();
-    showResult(r.ok, JSON.stringify(d, null, 2));
-    appendLog(`POST consent=${consent} → ${d.ok ? 'OK' : 'ERREUR'}`, d.ok ? '' : 'err');
-  } catch(e) { showResult(false, e.message); }
-}
-
-function apiSaveYes() { apiSaveConsent('yes'); }
-function apiSaveNo()  { apiSaveConsent('no');  }
-
-async function apiNotify() {
-  showResult(true, 'Envoi du SMS…');
-  try {
-    const r = await fetch(`${API_BASE}/notify`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'X-Api-Key': API_KEY, 'X-Pharmacy-Id': PHARMACY },
-      body: JSON.stringify({ phone_number: getPhone(), patient_name: 'Josianne' })
-    });
-    const d = await r.json();
-    showResult(r.ok, r.ok ? `✓ SMS envoyé — SID: ${d.message_sid}` : JSON.stringify(d));
-    appendLog(r.ok ? `SMS envoyé → ${d.message_sid}` : `ERREUR SMS`, r.ok ? '' : 'err');
-  } catch(e) { showResult(false, e.message); }
-}
-
-appendLog('Page chargée — clique un patient pour tester', 'info');
-</script>
+    function clear() {
+      ['BA01_LastName','BA01_FirstName','BA01_Info2'].forEach(id => setText(id, ''));
+      document.getElementById('preview-name').textContent = 'Aucun patient chargé';
+      document.getElementById('preview-info').textContent = '';
+    }
+  </script>
 </body>
 </html>
