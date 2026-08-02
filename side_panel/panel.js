@@ -100,6 +100,10 @@ function applyState(msg) {
       fillEl('oi-phone', formatPhone(p.phoneRaw));
       resetNotifyUI();
       showView('opted-in');
+      // Show persistent warning if patient STOP'd and hasn't re-opted-in via INSCRIPTION
+      if (msg.needsReinscription) {
+        document.getElementById('reinscription-notice').classList.remove('hidden');
+      }
       break;
 
     case 'OPTED_OUT':

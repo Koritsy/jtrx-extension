@@ -96,7 +96,8 @@ async function handlePatientChanged(tabId, patient) {
       type: 'STATE_UPDATE',
       state: consentToState(consent),
       patient,
-      consentDate: result.consent_date || null,
+      consentDate:          result.consent_date || null,
+      needsReinscription:   result.needs_reinscription || false,
     });
   } catch (err) {
     broadcastToPanel({ type: 'STATE_UPDATE', state: 'ERROR', error: err.message });
