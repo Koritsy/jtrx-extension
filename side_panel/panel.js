@@ -189,7 +189,7 @@ function saveConsent(consent) {
   showView('loading');
   chrome.runtime.sendMessage({
     type: 'CONSENT_SAVE',
-    data: { consent, recordedBy: currentPatient?.user || 'unknown' },
+    data: { consent, recordedBy: currentPatient?.user || 'unknown', patient: currentPatient },
   }, (response) => {
     if (!response?.ok) {
       document.getElementById('error-msg').textContent = response?.error || '';
@@ -199,7 +199,7 @@ function saveConsent(consent) {
 }
 
 function sendNotification() {
-  chrome.runtime.sendMessage({ type: 'NOTIFY_SEND' });
+  chrome.runtime.sendMessage({ type: 'NOTIFY_SEND', patient: currentPatient });
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

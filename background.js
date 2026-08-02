@@ -55,7 +55,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // async
 
     case 'NOTIFY_SEND':
-      handleNotifySend(tabId, sendResponse);
+      handleNotifySend(tabId, sendResponse, msg.patient);
       return true; // async
 
     case 'RETRY_PATIENT': {
@@ -116,21 +116,22 @@ async function handleValidationDetected(tabId) {
   broadcastToPanel({ type: 'VALIDATION_PROMPT', patient: state.patient });
 }
 
-async function handleConsentSave(tabId, { consent, recordedBy }, sendResponse) {
-  const state = tabState[tabId];
-  if (!state?.patient) return sendResponse({ ok: false, error: 'No patient' });
+async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatient }, sendResponse) {
+  // Prefer tabState (in-memory), fall back to patient sent in the message
+  const patient = tabState[tabId]?.patient ?? msgPatient;
+  if (!patient) return sendResponse({ ok: false, error: 'No patient' });
 
   try {
     await apiRequest('POST', '/consent', {
-      phone_number:  state.patient.phoneRaw,
+      phone_number: patient.phoneRaw,
       consent,
-      recorded_by:   recordedBy,
+      recorded_by:  recordedBy,
     });
-    tabState[tabId].consent = consent;
+    if (tabState[tabId]) tabState[tabId].consent = consent;
     broadcastToPanel({
       type: 'STATE_UPDATE',
       state: consentToState(consent),
-      patient: state.patient,
+      patient,
     });
     sendResponse({ ok: true });
   } catch (err) {
@@ -138,14 +139,14 @@ async function handleConsentSave(tabId, { consent, recordedBy }, sendResponse) {
   }
 }
 
-async function handleNotifySend(tabId, sendResponse) {
-  const state = tabState[tabId];
-  if (!state?.patient) return sendResponse({ ok: false, error: 'No patient' });
+async function handleNotifySend(tabId, sendResponse, msgPatient) {
+  const patient = tabState[tabId]?.patient ?? msgPatient;
+  if (!patient) return sendResponse({ ok: false, error: 'No patient' });
 
   try {
     const result = await apiRequest('POST', '/notify', {
-      phone_number:  state.patient.phoneRaw,
-      patient_name:  state.patient.firstName,
+      phone_number: patient.phoneRaw,
+      patient_name: patient.firstName,
     });
     broadcastToPanel({ type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
     sendResponse({ ok: true });
