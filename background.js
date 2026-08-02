@@ -7,6 +7,9 @@ import { CONFIG } from './config.js';
 // Keyed by tabId — stores the current patient + their consent state per tab
 const tabState = {};
 
+// Last tab where a patient was detected — side panel messages have no tab, so we fall back to this
+let activeTabId = null;
+
 // ── API helpers ────────────────────────────────────────────────────────────
 
 async function apiRequest(method, path, body = null) {
@@ -28,11 +31,13 @@ async function apiRequest(method, path, body = null) {
 // ── Message router ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const tabId = sender.tab?.id;
+  // Content script messages have sender.tab.id; side panel messages do not — fall back to activeTabId
+  const tabId = sender.tab?.id ?? activeTabId;
 
   switch (msg.type) {
 
     case 'PATIENT_CHANGED':
+      activeTabId = sender.tab?.id ?? activeTabId;
       handlePatientChanged(tabId, msg.data);
       break;
 
@@ -52,6 +57,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'NOTIFY_SEND':
       handleNotifySend(tabId, sendResponse);
       return true; // async
+
+    case 'RETRY_PATIENT': {
+      const state = tabState[tabId];
+      if (state?.patient) {
+        broadcastToPanel({
+          type: 'STATE_UPDATE',
+          state: consentToState(state.consent),
+          patient: state.patient,
+        });
+      } else {
+        broadcastToPanel({ type: 'STATE_UPDATE', state: 'NO_PATIENT' });
+      }
+      break;
+    }
 
     default:
       break;
