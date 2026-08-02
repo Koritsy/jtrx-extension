@@ -85,19 +85,14 @@ function applyState(msg) {
       break;
 
     case 'NO_PHONE':
-      fillEl('np-name', formatName(p));
       showView('no-phone');
       break;
 
     case 'UNKNOWN':
-      fillEl('un-name', formatName(p));
-      fillEl('un-phone', formatPhone(p.phoneRaw));
       showView('unknown');
       break;
 
     case 'OPTED_IN':
-      fillEl('oi-name', formatName(p));
-      fillEl('oi-phone', formatPhone(p.phoneRaw));
       resetNotifyUI();
       showView('opted-in');
       // Show persistent warning if patient STOP'd and hasn't re-opted-in via INSCRIPTION
@@ -107,8 +102,6 @@ function applyState(msg) {
       break;
 
     case 'OPTED_OUT':
-      fillEl('oo-name', formatName(p));
-      fillEl('oo-phone', formatPhone(p.phoneRaw));
       showView('opted-out');
       break;
 
@@ -120,9 +113,7 @@ function applyState(msg) {
 }
 
 function showValidationPrompt() {
-  if (!currentPatient) return;
   validationPending = true;
-  fillEl('vp-name', formatName(currentPatient));
   document.getElementById('view-validation-prompt').classList.remove('hidden');
   document.getElementById('view-validation-prompt').classList.add('active');
 }
@@ -177,9 +168,6 @@ document.getElementById('btn-revoke-cancel').addEventListener('click', () => {
 
 // OPTED_OUT → reopen prompt (shows UNKNOWN view)
 document.getElementById('btn-change-consent').addEventListener('click', () => {
-  if (!currentPatient) return;
-  fillEl('un-name', formatName(currentPatient));
-  fillEl('un-phone', formatPhone(currentPatient.phoneRaw));
   showView('unknown');
 });
 

@@ -35,9 +35,6 @@
 
     <!-- ── No phone in DOM yet ── -->
     <div id="view-no-phone" class="view">
-      <div class="patient-card">
-        <div class="patient-name" id="np-name"></div>
-      </div>
       <div class="info-msg">
         ⚠️ Numéro de téléphone introuvable dans le dossier.
       </div>
@@ -45,10 +42,6 @@
 
     <!-- ── UNKNOWN — consent prompt ── -->
     <div id="view-unknown" class="view">
-      <div class="patient-card">
-        <div class="patient-name" id="un-name"></div>
-        <div class="patient-phone" id="un-phone"></div>
-      </div>
       <div class="prompt-box">
         <p class="prompt-question">
           Demandez au patient s'il souhaite recevoir un SMS lorsque son ordonnance est prête.
@@ -62,11 +55,7 @@
 
     <!-- ── OPTED IN ── -->
     <div id="view-opted-in" class="view">
-      <div class="patient-card">
-        <div class="patient-name" id="oi-name"></div>
-        <div class="patient-phone" id="oi-phone"></div>
-        <div class="consent-badge yes">✓ Consentement SMS</div>
-      </div>
+      <div class="consent-badge yes" style="display:block;margin-bottom:14px">✓ Consentement SMS actif</div>
 
       <div id="notify-area">
         <button id="btn-notify" class="btn btn-notify">
@@ -109,11 +98,7 @@
 
     <!-- ── OPTED OUT ── -->
     <div id="view-opted-out" class="view">
-      <div class="patient-card">
-        <div class="patient-name" id="oo-name"></div>
-        <div class="patient-phone" id="oo-phone"></div>
-        <div class="consent-badge no">✗ Notifications refusées</div>
-      </div>
+      <div class="consent-badge no" style="display:block;margin-bottom:14px">✗ Notifications refusées</div>
       <div class="info-msg muted">
         Ce patient ne recevra pas de notifications SMS.
       </div>
@@ -127,7 +112,6 @@
       <div class="validation-card">
         <div class="validation-icon">💊</div>
         <p class="validation-title">Ordonnance validée</p>
-        <p class="validation-sub" id="vp-name"></p>
         <button id="btn-validation-send" class="btn btn-notify full-width">
           📱 Envoyer notification
         </button>
