@@ -61,11 +61,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'RETRY_PATIENT': {
       const state = tabState[tabId];
       if (state?.patient) {
-        broadcastToPanel({
-          type: 'STATE_UPDATE',
-          state: consentToState(state.consent),
-          patient: state.patient,
-        });
+        // Re-fetch consent from DB — don't trust stale cache
+        handlePatientChanged(tabId, state.patient);
       } else {
         broadcastToPanel({ type: 'STATE_UPDATE', state: 'NO_PATIENT' });
       }
@@ -151,7 +148,10 @@ async function handleNotifySend(tabId, sendResponse, msgPatient) {
     broadcastToPanel({ type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
     sendResponse({ ok: true });
   } catch (err) {
-    broadcastToPanel({ type: 'NOTIFY_ERROR', error: err.message });
+    // 403 = patient replied STOP — consent was revoked externally
+    const revoked = err.message.includes('403');
+    if (revoked && tabState[tabId]) tabState[tabId].consent = 'no';
+    broadcastToPanel({ type: 'NOTIFY_ERROR', error: err.message, consentRevoked: revoked });
     sendResponse({ ok: false, error: err.message });
   }
 }

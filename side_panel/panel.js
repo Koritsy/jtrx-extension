@@ -60,7 +60,13 @@ chrome.runtime.onMessage.addListener((msg) => {
 
     case 'NOTIFY_ERROR':
       resetNotifyUI();
-      alert(`Erreur d'envoi: ${msg.error}`);
+      if (msg.consentRevoked) {
+        // Patient replied STOP since last check — refresh to show OPTED_OUT
+        chrome.runtime.sendMessage({ type: 'RETRY_PATIENT' });
+      } else {
+        document.getElementById('error-msg').textContent = msg.error || '';
+        showView('error');
+      }
       break;
   }
 });
@@ -151,11 +157,18 @@ document.getElementById('btn-confirm-no').addEventListener('click', () => {
   resetNotifyUI();
 });
 
-// OPTED_IN → revoke consent
+// OPTED_IN → show revoke confirmation
 document.getElementById('btn-revoke').addEventListener('click', () => {
-  if (confirm('Retirer le consentement de ce patient?')) {
-    saveConsent('no');
-  }
+  document.getElementById('revoke-confirm').classList.remove('hidden');
+});
+
+document.getElementById('btn-revoke-yes').addEventListener('click', () => {
+  document.getElementById('revoke-confirm').classList.add('hidden');
+  saveConsent('no');
+});
+
+document.getElementById('btn-revoke-cancel').addEventListener('click', () => {
+  document.getElementById('revoke-confirm').classList.add('hidden');
 });
 
 // OPTED_OUT → reopen prompt (shows UNKNOWN view)

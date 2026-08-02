@@ -88,6 +88,15 @@
         ✓ SMS envoyé avec succès
       </div>
 
+      <!-- Revoke confirmation (hidden by default) -->
+      <div id="revoke-confirm" class="confirm-box hidden" style="background:#ffebee;border-color:#ffcdd2">
+        <p>Retirer le consentement de ce patient?</p>
+        <div class="confirm-buttons">
+          <button id="btn-revoke-yes" class="btn btn-no">Oui, retirer</button>
+          <button id="btn-revoke-cancel" class="btn btn-ghost">Annuler</button>
+        </div>
+      </div>
+
       <div class="secondary-actions">
         <button id="btn-revoke" class="btn-link">Retirer le consentement</button>
       </div>
