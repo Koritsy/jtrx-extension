@@ -10,9 +10,7 @@
     "alarms"
   ],
   "host_permissions": [
-    "*://*/*index.aspx*",
-    "https://automationjt.com/*",
-    "https://www.automationjt.com/*"
+    "*://*/*index.aspx*"
   ],
 
   "background": {
@@ -22,7 +20,7 @@
 
   "content_scripts": [
     {
-      "matches": ["*://*/*index.aspx*", "https://automationjt.com/*", "https://www.automationjt.com/*"],
+      "matches": ["*://*/*index.aspx*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
