@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>J.T.Rx — Page de test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; padding: 24px; }
+
+    .header {
+      background: #e53935;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 10px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header h1 { font-size: 18px; }
+    .header span { font-size: 13px; opacity: 0.85; }
+    .badge { background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 20px; font-size: 12px; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+    .card {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .card h2 { font-size: 13px; font-weight: 600; color: #90caf9; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .preset-btn {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      background: #0f3460;
+      color: white;
+      border: 1px solid #1565c0;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    .preset-btn:hover { background: #1565c0; }
+    .preset-btn .name { font-weight: 600; }
+    .preset-btn .phone { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+
+    .divider { border: none; border-top: 1px solid #0f3460; margin: 12px 0; }
+
+    .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    input[type="text"] {
+      width: 100%;
+      padding: 9px 12px;
+      background: #0a1628;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      color: white;
+      font-size: 14px;
+    }
+    input[type="text"]:focus { outline: none; border-color: #1565c0; }
+    input[type="text"]::placeholder { color: #4a5568; }
+
+    .btn-load {
+      width: 100%;
+      padding: 10px;
+      background: #1565c0;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-load:hover { background: #1976d2; }
+
+    .btn-clear {
+      width: 100%;
+      padding: 10px;
+      background: transparent;
+      color: #ef5350;
+      border: 1px solid #ef5350;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-clear:hover { background: rgba(239,83,80,0.1); }
+
+    /* ── Fake Priorx patient card (hidden, read by content.js) ── */
+    #priorx-sim {
+      background: #0d1117;
+      border: 1px dashed #30363d;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    #priorx-sim h2 { font-size: 13px; color: #8b949e; margin-bottom: 14px; text-transform: uppercase; }
+
+    .priorx-card {
+      background: #161b22;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .priorx-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .priorx-info { font-size: 13px; color: #8b949e; margin-top: 3px; }
+
+    .status-bar {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #8b949e;
+      margin-top: 8px;
+    }
+    .status-bar span { color: #58a6ff; font-weight: 600; }
+
+    .instructions {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 12px;
+      padding: 20px;
+      font-size: 13px;
+      line-height: 1.8;
+      color: #90caf9;
+    }
+    .instructions h2 { color: white; margin-bottom: 10px; font-size: 14px; }
+    .instructions ol { padding-left: 18px; }
+    .instructions li { margin-bottom: 4px; }
+    .instructions code { background: #0a1628; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>J.T.Rx — Environnement de test</h1>
+      <span>Simule les champs DOM de Priorx • Utilise le vrai backend AWS • SMS réels envoyés</span>
+    </div>
+    <span class="badge">DEV</span>
+  </div>
+
+  <!-- Fake Priorx DOM — content.js reads these IDs -->
+  <div id="priorx-sim">
+    <h2>Dossier patient simulé (lu par content.js)</h2>
+    <div class="priorx-card">
+      <div class="priorx-name">
+        <span id="BA01_LastName"></span><span id="BA01_FirstName" style="margin-left:4px"></span>
+      </div>
+      <div class="priorx-info" id="BA01_Info2"></div>
+    </div>
+    <div class="status-bar">
+      Utilisateur connecté : <span id="LoginName1">jositr</span>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- Preset patients -->
+    <div class="card">
+      <h2>Patients de test rapide</h2>
+
+      <button class="preset-btn" onclick="loadPatient('Tremblay', ', Josianne', '438.524.6123 - 168 rue Louise-Bernard, Beloeil')">
+        <div class="name">TREMBLAY, Josianne</div>
+        <div class="phone">438.524.6123 — TON NUMÉRO → SMS réel</div>
+      </button>
+
+      <button class="preset-btn" onclick="loadPatient('Dupont', ', Marie', '450.555.0001 - 12 rue des Érables, Beloeil')">
+        <div class="name">DUPONT, Marie</div>
+        <div class="phone">450.555.0001 — Nouveau patient (état UNKNOWN)</div>
+      </button>
+
+      <button class="preset-btn" onclick="loadPatient('Martin', ', Jean', '514.555.0002 - 45 boul. Laurier, Longueuil')">
+        <div class="name">MARTIN, Jean</div>
+        <div class="phone">514.555.0002 — Autre patient test</div>
+      </button>
+
+    </div>
+
+    <!-- Custom patient -->
+    <div class="card">
+      <h2>Patient personnalisé</h2>
+      <div class="input-row">
+        <input type="text" id="in-last" placeholder="Nom de famille" />
+        <input type="text" id="in-first" placeholder="Prénom" />
+      </div>
+      <input type="text" id="in-phone" placeholder="Tél. format: 438.524.6123" style="margin-bottom:0" />
+      <button class="btn-load" onclick="loadCustom()">Charger ce patient</button>
+      <hr class="divider" />
+      <button class="btn-clear" onclick="clearPatient()">✕ Quitter le patient (Ctrl+Q)</button>
+    </div>
+
+  </div>
+
+  <div class="instructions">
+    <h2>Scénarios de test</h2>
+    <ol>
+      <li><strong>Détection du champ :</strong> Clique sur ton nom → le panneau latéral devrait afficher <code>TREMBLAY, Josianne</code> et vérifier le consentement</li>
+      <li><strong>UNKNOWN → Oui :</strong> Si première fois avec ce numéro → clique Oui → état passe à OPTED_IN</li>
+      <li><strong>Envoyer SMS réel :</strong> Clique "Notifier" → confirme → tu reçois un vrai SMS sur ton <code>438-524-6123</code></li>
+      <li><strong>Retrait de consentement :</strong> Clique "Retirer le consentement" → état passe à OPTED_OUT</li>
+      <li><strong>OPTED_OUT :</strong> Quitte le patient → recharge → panneau montre "A refusé" + lien "Modifier"</li>
+      <li><strong>Modifier → Non :</strong> Clique "Modifier" → clique Non → reste OPTED_OUT</li>
+    </ol>
+  </div>
+
+  <script>
+    function setField(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = value;
+      // Fire a MutationObserver-compatible DOM change
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function loadPatient(last, first, info2) {
+      setField('BA01_LastName', last);
+      setField('BA01_FirstName', first);
+      setField('BA01_Info2', info2);
+      // Trigger a small DOM mutation so MutationObserver fires
+      const target = document.getElementById('BA01_LastName');
+      target.textContent = '';
+      requestAnimationFrame(() => { target.textContent = last; });
+    }
+
+    function loadCustom() {
+      const last  = document.getElementById('in-last').value.trim().toUpperCase();
+      const first = document.getElementById('in-first').value.trim();
+      const phone = document.getElementById('in-phone').value.trim();
+      if (!last || !phone) { alert('Nom et téléphone requis'); return; }
+      loadPatient(last, `, ${first}`, `${phone} - Adresse test`);
+    }
+
+    function clearPatient() {
+      ['BA01_LastName','BA01_FirstName','BA01_Info2'].forEach(id => {
+        document.getElementById(id).textContent = '';
+      });
+      const target = document.getElementById('BA01_LastName');
+      target.textContent = ' ';
+      requestAnimationFrame(() => { target.textContent = ''; });
+    }
+  </script>
+
+</body>
+</html>
