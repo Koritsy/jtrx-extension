@@ -5,7 +5,6 @@
   "description": "Système de notifications SMS pour les ordonnances prêtes — JT Automatisation",
 
   "permissions": [
-    "sidePanel",
     "storage",
     "alarms"
   ],
@@ -25,10 +24,6 @@
       "run_at": "document_idle"
     }
   ],
-
-  "side_panel": {
-    "default_path": "side_panel/panel.html"
-  },
 
   "action": {
     "default_title": "J.T.Rx",

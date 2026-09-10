@@ -19,6 +19,7 @@ async function apiRequest(method, path, body = null) {
       'Content-Type': 'application/json',
       'X-Api-Key': CONFIG.API_KEY,
       'X-Pharmacy-Id': CONFIG.PHARMACY_ID,
+      'X-Pharmacy-Name': CONFIG.PHARMACY_NAME,
     },
   };
   if (body) opts.body = JSON.stringify(body);
@@ -43,7 +44,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'PATIENT_CLEARED':
       delete tabState[tabId];
-      broadcastToPanel({ type: 'STATE_UPDATE', state: 'NO_PATIENT' });
+      broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
       break;
 
     case 'PRESCRIPTION_VALIDATED':
@@ -55,7 +56,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // async
 
     case 'NOTIFY_SEND':
-      handleNotifySend(tabId, sendResponse, msg.patient);
+      handleNotifySend(tabId, sendResponse, msg.patient, msg.messageType);
+      return true; // async
+
+    case 'CONFIRMATIONS_LIST':
+      handleConfirmationsList(sendResponse);
+      return true; // async
+
+    case 'CONFIRMATION_DISMISS':
+      handleConfirmationDismiss(msg.confirmationId, sendResponse);
       return true; // async
 
     case 'RETRY_PATIENT': {
@@ -63,7 +72,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (patient) {
         handlePatientChanged(tabId, patient);
       } else {
-        broadcastToPanel({ type: 'STATE_UPDATE', state: 'NO_PATIENT' });
+        broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
       }
       break;
     }
@@ -78,21 +87,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function handlePatientChanged(tabId, patient) {
   tabState[tabId] = { patient, consent: null };
 
-  broadcastToPanel({ type: 'STATE_UPDATE', state: 'LOADING', patient });
+  broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'LOADING', patient });
 
   if (!patient.phoneRaw || patient.phoneRaw.length < 10) {
-    // Phone not yet in DOM (might load slightly after name) — panel shows loading
-    // content.js will re-send PATIENT_CHANGED once BA01_Info2 updates
-    broadcastToPanel({ type: 'STATE_UPDATE', state: 'NO_PHONE', patient });
+    broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PHONE', patient });
     return;
   }
 
   try {
     const result = await apiRequest('GET', `/consent/${patient.phoneRaw}`);
-    const consent = result.consent; // "yes" | "no" | null
+    const consent = result.consent;
     tabState[tabId].consent = consent;
 
-    broadcastToPanel({
+    broadcastToPanel(tabId, {
       type: 'STATE_UPDATE',
       state: consentToState(consent),
       patient,
@@ -100,7 +107,7 @@ async function handlePatientChanged(tabId, patient) {
       needsReinscription:   result.needs_reinscription || false,
     });
   } catch (err) {
-    broadcastToPanel({ type: 'STATE_UPDATE', state: 'ERROR', error: err.message });
+    broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'ERROR', error: err.message });
   }
 }
 
@@ -108,9 +115,7 @@ async function handleValidationDetected(tabId) {
   const state = tabState[tabId];
   if (!state || state.consent !== 'yes') return;
 
-  // Open side panel (in case it isn't visible) and prompt
-  chrome.sidePanel.open({ tabId }).catch(() => {});
-  broadcastToPanel({ type: 'VALIDATION_PROMPT', patient: state.patient });
+  broadcastToPanel(tabId, { type: 'VALIDATION_PROMPT', patient: state.patient });
 }
 
 async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatient }, sendResponse) {
@@ -125,7 +130,7 @@ async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatie
       recorded_by:  recordedBy,
     });
     if (tabState[tabId]) tabState[tabId].consent = consent;
-    broadcastToPanel({
+    broadcastToPanel(tabId, {
       type: 'STATE_UPDATE',
       state: consentToState(consent),
       patient,
@@ -136,7 +141,7 @@ async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatie
   }
 }
 
-async function handleNotifySend(tabId, sendResponse, msgPatient) {
+async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
   const patient = tabState[tabId]?.patient ?? msgPatient;
   if (!patient) return sendResponse({ ok: false, error: 'No patient' });
 
@@ -144,14 +149,32 @@ async function handleNotifySend(tabId, sendResponse, msgPatient) {
     const result = await apiRequest('POST', '/notify', {
       phone_number: patient.phoneRaw,
       patient_name: patient.firstName,
+      message_type: messageType || 'ready',
     });
-    broadcastToPanel({ type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
+    broadcastToPanel(tabId, { type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
     sendResponse({ ok: true });
   } catch (err) {
-    // 403 = patient replied STOP — consent was revoked externally
     const revoked = err.message.includes('403');
     if (revoked && tabState[tabId]) tabState[tabId].consent = 'no';
-    broadcastToPanel({ type: 'NOTIFY_ERROR', error: err.message, consentRevoked: revoked });
+    broadcastToPanel(tabId, { type: 'NOTIFY_ERROR', error: err.message, consentRevoked: revoked });
+    sendResponse({ ok: false, error: err.message });
+  }
+}
+
+async function handleConfirmationsList(sendResponse) {
+  try {
+    const result = await apiRequest('GET', '/confirmations');
+    sendResponse({ ok: true, confirmations: result.confirmations || [] });
+  } catch (err) {
+    sendResponse({ ok: false, error: err.message });
+  }
+}
+
+async function handleConfirmationDismiss(confirmationId, sendResponse) {
+  try {
+    await apiRequest('POST', `/confirmations/${encodeURIComponent(confirmationId)}/dismiss`);
+    sendResponse({ ok: true });
+  } catch (err) {
     sendResponse({ ok: false, error: err.message });
   }
 }
@@ -164,13 +187,12 @@ function consentToState(consent) {
   return 'UNKNOWN';
 }
 
-function broadcastToPanel(message) {
-  chrome.runtime.sendMessage(message).catch(() => {
-    // Panel not open — fine, it will load fresh state on open
-  });
+function broadcastToPanel(tabId, message) {
+  if (!tabId) return;
+  chrome.tabs.sendMessage(tabId, message).catch(() => {});
 }
 
-// Open side panel automatically when extension icon is clicked
+// Toggle widget when extension icon is clicked
 chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ tabId: tab.id });
+  chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_WIDGET' }).catch(() => {});
 });

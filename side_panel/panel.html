@@ -8,12 +8,18 @@
 </head>
 <body>
 
-  <header>
-    <div class="logo">J.T.<span>Rx</span></div>
-    <div id="pharmacy-name" class="pharmacy-name"></div>
-  </header>
+  <!-- ── Top nav (always visible) ── -->
+  <nav id="top-nav" class="top-nav">
+    <button id="nav-tab-patient" class="nav-tab active">Patient</button>
+    <button id="nav-tab-confirmations" class="nav-tab">
+      Confirmations
+      <span id="confirmations-badge" class="badge hidden">0</span>
+    </button>
+  </nav>
 
   <main id="app">
+
+    <div id="patient-panel">
 
     <!-- ── No patient loaded ── -->
     <div id="view-no-patient" class="view active">
@@ -55,17 +61,23 @@
 
     <!-- ── OPTED IN ── -->
     <div id="view-opted-in" class="view">
-      <div class="consent-badge yes" style="display:block;margin-bottom:14px">✓ Consentement SMS actif</div>
+      <div class="consent-badge yes" style="display:block;margin-bottom:8px">✓ Consentement SMS actif</div>
 
-      <div id="notify-area">
-        <button id="btn-notify" class="btn btn-notify">
-          📱 Notifier le patient
+      <div id="notify-area" class="notify-buttons">
+        <button class="btn btn-notify" data-notify-type="ready">
+          📱 Commande prête
+        </button>
+        <button class="btn btn-notify" data-notify-type="renewal">
+          🔄 Renouvellement dû
+        </button>
+        <button class="btn btn-notify" data-notify-type="partial">
+          📦 Commande partielle
         </button>
       </div>
 
       <!-- Confirmation step (hidden by default) -->
       <div id="notify-confirm" class="confirm-box hidden">
-        <p>Envoyer la notification SMS à ce patient?</p>
+        <p id="notify-confirm-text">Envoyer la notification SMS à ce patient?</p>
         <div class="confirm-buttons">
           <button id="btn-confirm-yes" class="btn btn-yes">Oui, envoyer</button>
           <button id="btn-confirm-no"  class="btn btn-ghost">Annuler</button>
@@ -98,7 +110,7 @@
 
     <!-- ── OPTED OUT ── -->
     <div id="view-opted-out" class="view">
-      <div class="consent-badge no" style="display:block;margin-bottom:14px">✗ Notifications refusées</div>
+      <div class="consent-badge no" style="display:block;margin-bottom:8px">✗ Notifications refusées</div>
       <div class="info-msg muted">
         Ce patient ne recevra pas de notifications SMS.
       </div>
@@ -128,6 +140,17 @@
         <span id="error-msg"></span>
         <button id="btn-retry" class="btn btn-ghost">Réessayer</button>
       </div>
+    </div>
+
+    </div><!-- /#patient-panel -->
+
+    <!-- ── Confirmations tab (renewal OUI replies) ── -->
+    <div id="view-confirmations" class="view active hidden">
+      <div id="confirmations-empty" class="empty-state hidden">
+        <div class="empty-icon">✅</div>
+        <p>Aucune confirmation en attente</p>
+      </div>
+      <div id="confirmations-list"></div>
     </div>
 
   </main>

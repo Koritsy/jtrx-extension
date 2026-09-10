@@ -7,10 +7,16 @@ import { CONFIG } from '../config.js';
 let currentState  = 'NO_PATIENT';
 let currentPatient = null;
 let validationPending = false;
+let pendingNotifyType = 'ready';
+let confirmationsPollTimer = null;
+
+const NOTIFY_LABELS = {
+  ready:   'Envoyer la notification "commande prête" à ce patient?',
+  renewal: 'Envoyer la notification de renouvellement à ce patient?',
+  partial: 'Envoyer la notification "commande partielle" à ce patient?',
+};
 
 // ── Init ───────────────────────────────────────────────────────────────────
-
-document.getElementById('pharmacy-name').textContent = CONFIG.PHARMACY_NAME;
 
 // ── View manager ───────────────────────────────────────────────────────────
 
@@ -69,6 +75,97 @@ chrome.runtime.onMessage.addListener((msg) => {
       break;
   }
 });
+
+// ── Top nav (Patient / Confirmations) ─────────────────────────────────────
+
+document.getElementById('nav-tab-patient').addEventListener('click', () => {
+  setActiveTab('patient');
+});
+
+document.getElementById('nav-tab-confirmations').addEventListener('click', () => {
+  setActiveTab('confirmations');
+  fetchConfirmations();
+});
+
+function setActiveTab(tab) {
+  document.getElementById('nav-tab-patient').classList.toggle('active', tab === 'patient');
+  document.getElementById('nav-tab-confirmations').classList.toggle('active', tab === 'confirmations');
+  document.getElementById('patient-panel').classList.toggle('hidden', tab !== 'patient');
+  document.getElementById('view-confirmations').classList.toggle('hidden', tab !== 'confirmations');
+}
+
+// ── Confirmations ──────────────────────────────────────────────────────────
+
+function fetchConfirmations() {
+  chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST' }, (response) => {
+    if (!response?.ok) return;
+    renderConfirmations(response.confirmations || []);
+  });
+}
+
+function renderConfirmations(items) {
+  const listEl  = document.getElementById('confirmations-list');
+  const emptyEl = document.getElementById('confirmations-empty');
+  const badgeEl = document.getElementById('confirmations-badge');
+
+  badgeEl.textContent = items.length;
+  badgeEl.classList.toggle('hidden', items.length === 0);
+
+  emptyEl.classList.toggle('hidden', items.length > 0);
+  listEl.innerHTML = '';
+
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'confirmation-item';
+    div.innerHTML = `
+      <div class="confirmation-info">
+        <div class="confirmation-name">${escapeHtml(item.patient_name || 'Numéro inconnu')}</div>
+        <div class="confirmation-time">${formatConfirmationTime(item.replied_at)}</div>
+      </div>
+      <button class="btn-dismiss" data-confirmation-id="${item.confirmation_id}">✓ Fait</button>
+    `;
+    listEl.appendChild(div);
+  });
+
+  listEl.querySelectorAll('.btn-dismiss').forEach(btn => {
+    btn.addEventListener('click', () => dismissConfirmation(btn.dataset.confirmationId));
+  });
+}
+
+function dismissConfirmation(confirmationId) {
+  chrome.runtime.sendMessage(
+    { type: 'CONFIRMATION_DISMISS', confirmationId },
+    (response) => {
+      if (response?.ok) fetchConfirmations();
+    }
+  );
+}
+
+function formatConfirmationTime(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('fr-CA', {
+      dateStyle: 'short', timeStyle: 'short',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Poll for new confirmations every 20s so the badge count stays current
+// even while the technician is looking at the Patient tab.
+function startConfirmationsPolling() {
+  fetchConfirmations();
+  confirmationsPollTimer = setInterval(fetchConfirmations, 20000);
+}
+
+startConfirmationsPolling();
 
 function applyState(msg) {
   document.getElementById('reinscription-notice')?.classList.add('hidden');
@@ -136,15 +233,20 @@ document.getElementById('btn-non').addEventListener('click', () => {
   saveConsent('no');
 });
 
-// OPTED_IN → show confirmation
-document.getElementById('btn-notify').addEventListener('click', () => {
-  document.getElementById('notify-confirm').classList.remove('hidden');
-  document.getElementById('notify-area').classList.add('hidden');
+// OPTED_IN → show confirmation (one listener per notify-type button)
+document.querySelectorAll('#notify-area [data-notify-type]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    pendingNotifyType = btn.dataset.notifyType;
+    document.getElementById('notify-confirm-text').textContent =
+      NOTIFY_LABELS[pendingNotifyType] || NOTIFY_LABELS.ready;
+    document.getElementById('notify-confirm').classList.remove('hidden');
+    document.getElementById('notify-area').classList.add('hidden');
+  });
 });
 
 // Confirmation → send
 document.getElementById('btn-confirm-yes').addEventListener('click', () => {
-  sendNotification();
+  sendNotification(pendingNotifyType);
 });
 
 // Confirmation → cancel
@@ -174,7 +276,7 @@ document.getElementById('btn-change-consent').addEventListener('click', () => {
 // Validation prompt → send
 document.getElementById('btn-validation-send').addEventListener('click', () => {
   hideValidationPrompt();
-  sendNotification();
+  sendNotification('ready');
 });
 
 // Validation prompt → dismiss
@@ -210,8 +312,8 @@ function saveConsent(consent) {
   });
 }
 
-function sendNotification() {
-  chrome.runtime.sendMessage({ type: 'NOTIFY_SEND', patient: currentPatient });
+function sendNotification(messageType) {
+  chrome.runtime.sendMessage({ type: 'NOTIFY_SEND', patient: currentPatient, messageType });
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
