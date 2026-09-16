@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "J.T.Rx — Companion Pharmacie",
+  "name": "NotiRx — Companion Pharmacie",
   "version": "1.0.0",
   "description": "Système de notifications SMS pour les ordonnances prêtes — JT Automatisation",
 
@@ -26,7 +26,7 @@
   ],
 
   "action": {
-    "default_title": "J.T.Rx",
+    "default_title": "NotiRx",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

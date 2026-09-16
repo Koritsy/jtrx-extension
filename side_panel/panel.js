@@ -1,4 +1,4 @@
-// J.T.Rx side panel — handles all UI state transitions and user interactions.
+// NotiRx side panel — handles all UI state transitions and user interactions.
 
 import { CONFIG } from '../config.js';
 

@@ -1,4 +1,4 @@
-// J.T.Rx background service worker — relays messages, calls AWS API.
+// NotiRx background service worker — relays messages, calls AWS API.
 
 import { CONFIG } from './config.js';
 

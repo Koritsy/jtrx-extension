@@ -1,4 +1,4 @@
-// J.T.Rx content script — reads Priorx DOM + renders floating widget via Shadow DOM.
+// NotiRx content script — reads Priorx DOM + renders floating widget via Shadow DOM.
 
 (function () {
   if (!document.getElementById('BA01_LastName')) return;
@@ -6,7 +6,7 @@
   // ── Shadow DOM host ─────────────────────────────────────────────────────────
 
   const host = document.createElement('div');
-  host.id = 'jtrx-host';
+  host.id = 'notirx-host';
   Object.assign(host.style, {
     position: 'fixed',
     right: '0',
@@ -203,7 +203,7 @@
 
       </div>
 
-      <button id="tab" title="J.T.Rx">
+      <button id="tab" title="NotiRx">
         <div class="dot" id="tab-dot"></div>
         <span class="tab-lbl">Rx</span>
       </button>
