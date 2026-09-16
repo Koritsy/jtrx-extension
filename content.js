@@ -129,10 +129,59 @@
 
       hr { border: none; border-top: 1px solid #eee; margin: 5px 0; }
       .hidden { display: none !important; }
+
+      #nav-row {
+        display: flex;
+        border-bottom: 1px solid #eee;
+        margin: -9px -9px 8px;
+        padding: 0 4px;
+      }
+      .nav-btn {
+        flex: 1;
+        background: none;
+        border: none;
+        padding: 6px 2px;
+        font-size: 10px;
+        font-weight: 600;
+        color: #888;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+      }
+      .nav-btn.active { color: #1565c0; border-bottom-color: #1565c0; }
+      .conf-badge {
+        background: #c62828; color: #fff;
+        border-radius: 20px; font-size: 9px; font-weight: 700;
+        padding: 0 4px; min-width: 12px; text-align: center;
+      }
+      .conf-item {
+        background: #fafafa; border: 1px solid #eee;
+        border-radius: 6px; padding: 6px; margin-bottom: 5px;
+        display: flex; justify-content: space-between; align-items: center; gap: 6px;
+      }
+      .conf-name { font-weight: 600; font-size: 11px; }
+      .conf-time { color: #9e9e9e; font-size: 9px; margin-top: 1px; }
+      .btn-done {
+        background: #e8f5e9; color: #2e7d32; border: none;
+        border-radius: 5px; padding: 4px 6px; font-size: 10px; font-weight: 600;
+        cursor: pointer; white-space: nowrap;
+      }
     </style>
 
     <div id="root">
       <div id="panel">
+
+        <div id="nav-row">
+          <button id="nav-patient" class="nav-btn active">Patient</button>
+          <button id="nav-confirmations" class="nav-btn">
+            Confirm. <span id="conf-badge" class="conf-badge hidden">0</span>
+          </button>
+        </div>
+
+        <div id="patient-views">
 
         <div id="v-no-patient" class="view active">
           <div class="empty">Aucun patient</div>
@@ -161,11 +210,14 @@
           <span class="badge yes">✓ SMS actif</span>
 
           <div id="oi-area">
-            <button id="btn-notify" class="btn btn-blue">📱 Notifier</button>
+            <button class="btn btn-blue" data-notify-type="ready">📱 Commande prête</button>
+            <button class="btn btn-blue" data-notify-type="partial">⚠️ Médicaments en commande</button>
+            <button class="btn btn-blue" data-notify-type="new_prescription">📠 Nouvelle prescription reçue</button>
+            <button class="btn btn-blue" data-notify-type="renewal">🔄 Ordonnances dues</button>
           </div>
 
           <div id="oi-confirm" class="confirm hidden">
-            <p>Envoyer la notification?</p>
+            <p id="oi-confirm-text">Envoyer la notification?</p>
             <div class="row">
               <button id="btn-send-yes" class="btn btn-blue">Oui</button>
               <button id="btn-send-no"  class="btn btn-ghost">Non</button>
@@ -201,6 +253,13 @@
           <button id="btn-retry" class="btn btn-ghost">Réessayer</button>
         </div>
 
+        </div><!-- /#patient-views -->
+
+        <div id="v-confirmations" class="view">
+          <div id="conf-empty" class="empty hidden">Aucune confirmation en attente</div>
+          <div id="conf-list"></div>
+        </div>
+
       </div>
 
       <button id="tab" title="NotiRx">
@@ -216,6 +275,14 @@
   const panel  = $('panel');
   const tab    = $('tab');
   const tabDot = $('tab-dot');
+
+  let pendingNotifyType = 'ready';
+  const NOTIFY_LABELS = {
+    ready:            'Envoyer "commande prête"?',
+    partial:          'Envoyer "médicaments en commande"?',
+    new_prescription: 'Envoyer "nouvelle prescription reçue"?',
+    renewal:          'Envoyer "ordonnances dues"?',
+  };
 
   // ── Toggle / drag ─────────────────────────────────────────────────────────────
 
@@ -272,6 +339,81 @@
     $('oi-success').classList.add('hidden');
   }
 
+  // ── Top nav (Patient / Confirmations) ────────────────────────────────────────
+
+  function setActiveTab(name) {
+    $('nav-patient').classList.toggle('active', name === 'patient');
+    $('nav-confirmations').classList.toggle('active', name === 'confirmations');
+    $('patient-views').style.display = name === 'patient' ? '' : 'none';
+    $('v-confirmations').classList.toggle('active', name === 'confirmations');
+  }
+
+  $('nav-patient').addEventListener('click', () => setActiveTab('patient'));
+  $('nav-confirmations').addEventListener('click', () => {
+    setActiveTab('confirmations');
+    fetchConfirmations();
+  });
+
+  // ── Confirmations (renewal OUI replies) ──────────────────────────────────────
+
+  function fetchConfirmations() {
+    chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST' }, response => {
+      if (!response?.ok) return;
+      renderConfirmations(response.confirmations || []);
+    });
+  }
+
+  function renderConfirmations(items) {
+    const badge = $('conf-badge');
+    badge.textContent = items.length;
+    badge.classList.toggle('hidden', items.length === 0);
+
+    $('conf-empty').classList.toggle('hidden', items.length > 0);
+    const listEl = $('conf-list');
+    listEl.innerHTML = '';
+
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'conf-item';
+      div.innerHTML = `
+        <div>
+          <div class="conf-name">${escapeHtml(item.patient_name || 'Numéro inconnu')}</div>
+          <div class="conf-time">${formatConfTime(item.replied_at)}</div>
+        </div>
+        <button class="btn-done" data-confirmation-id="${item.confirmation_id}">✓ Fait</button>
+      `;
+      listEl.appendChild(div);
+    });
+
+    listEl.querySelectorAll('.btn-done').forEach(btn => {
+      btn.addEventListener('click', () => dismissConfirmation(btn.dataset.confirmationId));
+    });
+  }
+
+  function dismissConfirmation(confirmationId) {
+    chrome.runtime.sendMessage({ type: 'CONFIRMATION_DISMISS', confirmationId }, response => {
+      if (response?.ok) fetchConfirmations();
+    });
+  }
+
+  function formatConfTime(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' });
+    } catch {
+      return iso;
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  fetchConfirmations();
+  setInterval(fetchConfirmations, 20000);
+
   // ── Messages from background ───────────────────────────────────────────────
 
   chrome.runtime.onMessage.addListener(msg => {
@@ -286,6 +428,8 @@
         panel.classList.add('open');
         resetNotify();
         showView('opted-in');
+        pendingNotifyType = 'ready';
+        $('oi-confirm-text').textContent = NOTIFY_LABELS.ready;
         $('oi-area').classList.add('hidden');
         $('oi-confirm').classList.remove('hidden');
         break;
@@ -356,13 +500,17 @@
   $('btn-oui').addEventListener('click', () => saveConsent('yes'));
   $('btn-non').addEventListener('click', () => saveConsent('no'));
 
-  $('btn-notify').addEventListener('click', () => {
-    $('oi-area').classList.add('hidden');
-    $('oi-confirm').classList.remove('hidden');
+  $('oi-area').querySelectorAll('[data-notify-type]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      pendingNotifyType = btn.dataset.notifyType;
+      $('oi-confirm-text').textContent = NOTIFY_LABELS[pendingNotifyType] || NOTIFY_LABELS.ready;
+      $('oi-area').classList.add('hidden');
+      $('oi-confirm').classList.remove('hidden');
+    });
   });
 
   $('btn-send-yes').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'NOTIFY_SEND', patient: currentPatient });
+    chrome.runtime.sendMessage({ type: 'NOTIFY_SEND', patient: currentPatient, messageType: pendingNotifyType });
   });
 
   $('btn-send-no').addEventListener('click', resetNotify);
