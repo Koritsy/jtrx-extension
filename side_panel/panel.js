@@ -11,9 +11,10 @@ let pendingNotifyType = 'ready';
 let confirmationsPollTimer = null;
 
 const NOTIFY_LABELS = {
-  ready:   'Envoyer la notification "commande prête" à ce patient?',
-  renewal: 'Envoyer la notification de renouvellement à ce patient?',
-  partial: 'Envoyer la notification "commande partielle" à ce patient?',
+  ready:            'Envoyer la notification "commande prête" à ce patient?',
+  partial:          'Envoyer la notification "médicaments en commande" à ce patient?',
+  new_prescription: 'Envoyer la notification "nouvelle prescription reçue" à ce patient?',
+  renewal:          'Envoyer la notification "ordonnances dues" à ce patient?',
 };
 
 // ── Init ───────────────────────────────────────────────────────────────────
