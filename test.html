@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>NotiRx — Test</title>
   <style>
-    body { font-family: system-ui; max-width: 400px; margin: 60px auto; padding: 0 20px; }
+    body { font-family: system-ui; max-width: 520px; margin: 40px auto; padding: 0 20px; }
     h2 { font-size: 16px; margin-bottom: 20px; color: #1a237e; }
     p  { font-size: 13px; color: #555; margin-bottom: 20px; line-height: 1.5; }
 
@@ -17,6 +17,13 @@
              font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
     .load  { background: #1a237e; color: white; }
     .clear { background: #ffebee; color: #c62828; }
+    .search-btn { background: #1565c0; color: white; font-size: 14px; }
+    label { display: block; font-size: 13px; margin: 8px 0 14px; }
+    #search-status, #key-log {
+      font-size: 13px; background: #fafafa; border: 1px solid #eee;
+      border-radius: 8px; padding: 10px; margin-top: 8px; white-space: pre-wrap;
+    }
+    .search-field { width: 100%; padding: 8px; font-size: 14px; margin-bottom: 8px; }
 
     /* Hidden Priorx DOM — content.js reads these */
     #priorx { display: none; }
@@ -26,11 +33,10 @@
 
   <h2>NotiRx — Page de test</h2>
   <p>
-    Données fictives. Le widget n’apparaît que sur
-    <strong>https://4502812786.priorx.ca</strong>
-    (le dossier patient est sous <strong>/4502812786.Web/</strong>).
-    Les champs lus sont les identifiants BA01_LastName, BA01_FirstName et BA01_Info2.
-    Clique <strong>Charger un patient fictif</strong>, puis l’onglet bleu <strong>Rx</strong>.
+    Données fictives (Alex Exemple, 555-010-0199). Le widget n’apparaît que sur
+    <strong>https://4502812786.priorx.ca</strong>.
+    Cette page teste aussi la recherche F3 sans Priorx : un clic envoie F3,
+    attend le champ, et y place le numéro. Aucune touche Entrée n’est envoyée.
   </p>
 
   <!-- Visible preview -->
@@ -40,7 +46,27 @@
   </div>
 
   <button class="load"  onclick="load()">Charger un patient fictif</button>
-  <button class="clear" onclick="clear()">✕ Effacer le patient</button>
+  <button class="clear" onclick="clearPatient()">✕ Effacer le patient</button>
+
+  <h2>Recherche F3 (sans Priorx)</h2>
+  <p>
+    Le champ « recherche F3 » est caché jusqu’à la touche F3, comme sur Priorx.
+    Le second champ utilise le sélecteur de secours
+    <strong>#PRIORX_SEARCH_FIELD_ID_UNCONFIRMED</strong>.
+    Cet identifiant n’est pas celui de Priorx : à la pharmacie, Josi doit le confirmer
+    (clic droit sur le champ de recherche → Inspecter).
+  </p>
+  <label>
+    <input id="ignore-synthetic" type="checkbox" />
+    Ignorer les F3 non fiables (isTrusted = faux), comme Priorx pourrait le faire
+  </label>
+  <input id="priorx-f3-search" class="search-field" hidden placeholder="Recherche F3" />
+  <input id="PRIORX_SEARCH_FIELD_ID_UNCONFIRMED" class="search-field" hidden placeholder="Sélecteur de secours" />
+  <button id="btn-f3-happy" class="search-btn" type="button">Clic réponse — F3 ouvre le champ</button>
+  <button id="btn-f3-fallback" class="search-btn" type="button">Clic réponse — F3 ignoré, champ de secours</button>
+  <button id="btn-f3-clipboard" class="search-btn" type="button">Clic réponse — aucun champ (copie)</button>
+  <div id="search-status">En attente d’un clic.</div>
+  <div id="key-log"></div>
 
   <!-- Hidden Priorx DOM read by content.js -->
   <div id="priorx">
@@ -68,11 +94,91 @@
       }, 50);
     }
 
-    function clear() {
+    function clearPatient() {
       ['BA01_LastName','BA01_FirstName','BA01_Info2'].forEach(id => setText(id, ''));
       document.getElementById('preview-name').textContent = 'Aucun patient chargé';
       document.getElementById('preview-info').textContent = '';
     }
+  </script>
+  <script src="priorx-search.js"></script>
+  <script>
+    const PHONE = '5550100199';
+    const f3Field = document.getElementById('priorx-f3-search');
+    const fallbackField = document.getElementById('PRIORX_SEARCH_FIELD_ID_UNCONFIRMED');
+    const statusEl = document.getElementById('search-status');
+    const logEl = document.getElementById('key-log');
+    const ignoreBox = document.getElementById('ignore-synthetic');
+    let enterSeen = false;
+
+    function hideField(el) {
+      el.hidden = true;
+      el.value = '';
+    }
+
+    function logLine(text) {
+      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+    }
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.keyCode === 13) {
+        enterSeen = true;
+        event.preventDefault();
+        logLine('Entrée reçue — cela ne devrait pas arriver.');
+        return;
+      }
+      const isF3 = event.key === 'F3' || event.code === 'F3' || event.keyCode === 114;
+      if (!isF3) return;
+      logLine('F3 key=' + event.key + ' code=' + event.code + ' keyCode=' + event.keyCode + ' isTrusted=' + event.isTrusted);
+      if (ignoreBox.checked && event.isTrusted === false) {
+        logLine('F3 ignoré (événement non fiable).');
+        return;
+      }
+      f3Field.hidden = false;
+      f3Field.focus();
+    });
+
+    function showResult(result) {
+      const lines = [
+        'Rempli : ' + (result.filled ? 'oui' : 'non'),
+        'Copié : ' + (result.copied ? 'oui' : 'non'),
+        'Champ F3 : ' + (f3Field.hidden ? '(caché)' : f3Field.value || '(vide)'),
+        'Champ de secours : ' + (fallbackField.hidden ? '(caché)' : fallbackField.value || '(vide)'),
+        'Touche Entrée envoyée : ' + (enterSeen ? 'oui' : 'non'),
+      ];
+      if (!result.filled && result.copied) {
+        lines.push('Numéro copié — collez-le dans la recherche (F3)');
+      }
+      statusEl.textContent = lines.join('\n');
+    }
+
+    async function runSearch() {
+      enterSeen = false;
+      logEl.textContent = '';
+      const result = await NotiRxSearch.openPatientSearch(document, PHONE, { waitMs: 400 });
+      showResult(result);
+    }
+
+    document.getElementById('btn-f3-happy').addEventListener('click', () => {
+      ignoreBox.checked = false;
+      hideField(f3Field);
+      hideField(fallbackField);
+      runSearch();
+    });
+
+    document.getElementById('btn-f3-fallback').addEventListener('click', () => {
+      ignoreBox.checked = true;
+      hideField(f3Field);
+      fallbackField.hidden = false;
+      fallbackField.value = '';
+      runSearch();
+    });
+
+    document.getElementById('btn-f3-clipboard').addEventListener('click', () => {
+      ignoreBox.checked = true;
+      hideField(f3Field);
+      hideField(fallbackField);
+      runSearch();
+    });
   </script>
 </body>
 </html>

@@ -25,6 +25,7 @@ rm -f "$out"
 zip -r "$out" \
   manifest.json \
   background.js \
+  priorx-search.js \
   content.js \
   api-contract.mjs \
   runtime-config.mjs \

@@ -29,7 +29,7 @@
       #root { display: flex; align-items: flex-start; }
 
       #panel {
-        width: 170px;
+        width: 260px;
         background: #fff;
         border: 1px solid #ddd;
         border-right: none;
@@ -155,6 +155,7 @@
         align-items: center;
         justify-content: center;
         gap: 4px;
+        white-space: nowrap;
       }
       .nav-btn.active { color: #1565c0; border-bottom-color: #1565c0; }
       .conf-badge {
@@ -167,12 +168,30 @@
         border-radius: 6px; padding: 6px; margin-bottom: 5px;
         display: flex; justify-content: space-between; align-items: center; gap: 6px;
       }
+      .conf-item.clickable:hover { background: #e3f2fd; border-color: #bbdefb; }
+      .conf-open {
+        flex: 1; min-width: 0;
+        background: none; border: none; padding: 0;
+        text-align: left; font: inherit; color: inherit;
+      }
+      .conf-item.clickable .conf-open { cursor: pointer; }
+      .conf-open-static { cursor: default; }
       .conf-name { font-weight: 600; font-size: 11px; }
+      .conf-type { color: #1565c0; font-size: 10px; margin-top: 1px; line-height: 1.3; }
       .conf-time { color: #9e9e9e; font-size: 9px; margin-top: 1px; }
+      #conf-list, #hist-list { max-height: 320px; overflow: auto; }
       .btn-done {
         background: #e8f5e9; color: #2e7d32; border: none;
         border-radius: 5px; padding: 4px 6px; font-size: 10px; font-weight: 600;
         cursor: pointer; white-space: nowrap;
+      }
+      .toast {
+        position: fixed; right: 12px; bottom: 12px;
+        max-width: 240px;
+        background: #1a237e; color: #fff;
+        border-radius: 8px; padding: 8px 10px;
+        font-size: 12px; line-height: 1.35;
+        box-shadow: 0 2px 10px rgba(0,0,0,.22);
       }
     </style>
 
@@ -181,9 +200,10 @@
 
         <div id="nav-row">
           <button id="nav-patient" class="nav-btn active">Patient</button>
-          <button id="nav-confirmations" class="nav-btn">
-            Confirm. <span id="conf-badge" class="conf-badge hidden">0</span>
+          <button id="nav-responses" class="nav-btn">
+            Réponses <span id="conf-badge" class="conf-badge hidden">0</span>
           </button>
+          <button id="nav-history" class="nav-btn">Historique</button>
         </div>
 
         <div id="patient-views">
@@ -261,9 +281,14 @@
 
         </div><!-- /#patient-views -->
 
-        <div id="v-confirmations" class="view">
-          <div id="conf-empty" class="empty hidden">Aucune confirmation en attente</div>
+        <div id="v-responses" class="view">
+          <div id="conf-empty" class="empty hidden">Aucune réponse en attente</div>
           <div id="conf-list"></div>
+        </div>
+
+        <div id="v-history" class="view">
+          <div id="hist-empty" class="empty">Aucun message envoyé pour ce patient.</div>
+          <div id="hist-list"></div>
         </div>
 
       </div>
@@ -273,6 +298,7 @@
         <span class="tab-lbl">Rx</span>
       </button>
     </div>
+    <div id="toast" class="toast hidden" role="status"></div>
   `;
 
   // ── Refs ─────────────────────────────────────────────────────────────────────
@@ -345,24 +371,42 @@
     $('oi-success').classList.add('hidden');
   }
 
-  // ── Top nav (Patient / Confirmations) ────────────────────────────────────────
+  // ── Top nav (Patient / Réponses / Historique) ───────────────────────────────
+
+  const Search = globalThis.NotiRxSearch;
+  let toastTimer = 0;
+
+  function showToast(message) {
+    const toast = $('toast');
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.add('hidden'), 4500);
+  }
 
   function setActiveTab(name) {
     $('nav-patient').classList.toggle('active', name === 'patient');
-    $('nav-confirmations').classList.toggle('active', name === 'confirmations');
+    $('nav-responses').classList.toggle('active', name === 'responses');
+    $('nav-history').classList.toggle('active', name === 'history');
     $('patient-views').style.display = name === 'patient' ? '' : 'none';
-    $('v-confirmations').classList.toggle('active', name === 'confirmations');
+    $('v-responses').classList.toggle('active', name === 'responses');
+    $('v-history').classList.toggle('active', name === 'history');
   }
 
   $('nav-patient').addEventListener('click', () => setActiveTab('patient'));
-  $('nav-confirmations').addEventListener('click', () => {
-    setActiveTab('confirmations');
+  $('nav-responses').addEventListener('click', () => {
+    setActiveTab('responses');
     fetchConfirmations();
   });
+  $('nav-history').addEventListener('click', () => {
+    setActiveTab('history');
+    fetchHistory(currentPatient?.phoneRaw);
+  });
 
-  // ── Confirmations (renewal OUI replies) ──────────────────────────────────────
+  // ── Réponses (patients who replied OUI) ──────────────────────────────────────
 
-  const EMPTY_CONFIRMATIONS = 'Aucune confirmation en attente';
+  const EMPTY_CONFIRMATIONS = 'Aucune réponse en attente';
+  const TOAST_COPIED = 'Numéro copié — collez-le dans la recherche (F3)';
 
   function fetchConfirmations() {
     chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST' }, response => {
@@ -391,22 +435,50 @@
     listEl.replaceChildren();
 
     items.forEach(item => {
+      const digits = Search ? Search.phoneDigits(item.phone_number) : '';
+      const canSearch = digits.length >= 10;
       const row = document.createElement('div');
-      row.className = 'conf-item';
+      row.className = 'conf-item' + (canSearch ? ' clickable' : '');
 
-      const text = document.createElement('div');
+      const text = document.createElement(canSearch ? 'button' : 'div');
+      text.className = canSearch ? 'conf-open' : 'conf-open conf-open-static';
+      if (canSearch) {
+        text.type = 'button';
+        text.title = 'Placer le numéro dans la recherche Priorx';
+        text.addEventListener('click', () => searchByPhone(digits));
+      }
+
       const name = document.createElement('div');
       name.className = 'conf-name';
-      name.textContent = item.patient_name || 'Numéro inconnu';
+      name.textContent = Search
+        ? Search.firstNameFromPatientName(item.patient_name)
+        : (item.patient_name || 'Patient');
+
+      const typeLabel = Search ? Search.messageTypeLabel(item.message_type) : '';
+      const type = document.createElement('div');
+      type.className = 'conf-type';
+      type.textContent = typeLabel;
+
       const time = document.createElement('div');
       time.className = 'conf-time';
-      time.textContent = formatConfTime(item.replied_at);
-      text.append(name, time);
+      const when = Search ? Search.formatTorontoTime(item.replied_at) : '';
+      const masked = canSearch && Search ? Search.maskPhone(digits) : '';
+      if (!canSearch) {
+        time.textContent = when ? `${when} · Sans numéro` : 'Sans numéro';
+      } else if (masked) {
+        time.textContent = when ? `${when} · ${masked}` : masked;
+      } else {
+        time.textContent = when;
+      }
+
+      text.append(name);
+      if (typeLabel) text.append(type);
+      text.append(time);
 
       const done = document.createElement('button');
       done.type = 'button';
       done.className = 'btn-done';
-      done.textContent = '✓ Fait';
+      done.textContent = 'Fait';
       const confirmationId = item.confirmation_id == null ? '' : String(item.confirmation_id);
       done.addEventListener('click', () => dismissConfirmation(confirmationId));
 
@@ -415,19 +487,99 @@
     });
   }
 
+  async function searchByPhone(digits) {
+    if (!Search) {
+      showToast('Impossible de placer le numéro. Appuyez sur F3, puis collez-le.');
+      return;
+    }
+    try {
+      const result = await Search.openPatientSearch(document, digits);
+      if (result.filled) return;
+      if (result.copied) {
+        showToast(TOAST_COPIED);
+        return;
+      }
+    } catch {
+      // Fall through to the same notice. The reply list stays as it is.
+    }
+    showToast('Impossible de placer le numéro. Appuyez sur F3, puis collez-le.');
+  }
+
   function dismissConfirmation(confirmationId) {
     chrome.runtime.sendMessage({ type: 'CONFIRMATION_DISMISS', confirmationId }, response => {
       if (response?.ok) fetchConfirmations();
+      else showToast('Impossible de marquer cette réponse comme terminée.');
     });
   }
 
-  function formatConfTime(iso) {
-    if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' });
-    } catch {
-      return iso;
+  // ── Historique (texts for the open patient file) ────────────────────────────
+
+  let historyRequest = 0;
+
+  function fetchHistory(phoneRaw) {
+    const requestId = ++historyRequest;
+    const digits = Search ? Search.phoneDigits(phoneRaw) : String(phoneRaw || '').replace(/\D/g, '');
+    const empty = $('hist-empty');
+    const listEl = $('hist-list');
+    listEl.replaceChildren();
+
+    if (!currentPatient) {
+      empty.textContent = 'Aucun patient.';
+      empty.classList.remove('hidden');
+      return;
     }
+    if (digits.length < 10) {
+      empty.textContent = 'Numéro introuvable dans le dossier.';
+      empty.classList.remove('hidden');
+      return;
+    }
+
+    empty.textContent = 'Chargement…';
+    empty.classList.remove('hidden');
+    chrome.runtime.sendMessage({ type: 'MESSAGES_HISTORY', phoneNumber: digits }, response => {
+      if (requestId !== historyRequest) return;
+      renderHistory(response);
+    });
+  }
+
+  function renderHistory(response) {
+    const empty = $('hist-empty');
+    const listEl = $('hist-list');
+    listEl.replaceChildren();
+
+    if (!response?.ok) {
+      empty.textContent = response?.error || "Impossible de charger l'historique.";
+      empty.classList.remove('hidden');
+      return;
+    }
+
+    const messages = Search
+      ? Search.sortMessagesNewestFirst(response.messages)
+      : (response.messages || []);
+    empty.textContent = 'Aucun message envoyé pour ce patient.';
+    empty.classList.toggle('hidden', messages.length > 0);
+    if (!messages.length) return;
+
+    messages.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'conf-item';
+      const text = document.createElement('div');
+      text.className = 'conf-open conf-open-static';
+
+      const title = document.createElement('div');
+      title.className = 'conf-name';
+      title.textContent = Search ? Search.historyEntryTitle(entry) : 'Message';
+
+      const meta = document.createElement('div');
+      meta.className = 'conf-time';
+      const when = Search ? Search.formatTorontoTime(entry.sent_at) : '';
+      const who = entry.sent_by ? String(entry.sent_by) : '';
+      meta.textContent = [when, who].filter(Boolean).join(' · ');
+
+      text.append(title, meta);
+      row.append(text);
+      listEl.appendChild(row);
+    });
   }
 
   fetchConfirmations();
@@ -447,6 +599,7 @@
         $('oi-confirm').classList.add('hidden');
         $('oi-success').classList.remove('hidden');
         setTimeout(resetNotify, 3000);
+        fetchHistory(currentPatient?.phoneRaw);
         break;
 
       case 'NOTIFY_ERROR':
@@ -578,15 +731,18 @@
     if (!patient.lastName && !patient.firstName) {
       currentPatient = null;
       chrome.runtime.sendMessage({ type: 'PATIENT_CLEARED' });
+      fetchHistory('');
       return;
     }
     if (
       currentPatient &&
       currentPatient.lastName  === patient.lastName &&
-      currentPatient.firstName === patient.firstName
+      currentPatient.firstName === patient.firstName &&
+      currentPatient.phoneRaw === patient.phoneRaw
     ) return;
     currentPatient = patient;
     chrome.runtime.sendMessage({ type: 'PATIENT_CHANGED', data: patient });
+    fetchHistory(patient.phoneRaw);
   }
 
   const nameTarget = document.getElementById('BA01_LastName');

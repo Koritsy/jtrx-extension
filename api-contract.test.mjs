@@ -7,6 +7,7 @@ import {
   confirmationsList,
   consentLookup,
   consentSave,
+  messagesHistory,
   notifySend,
 } from './api-contract.mjs';
 
@@ -34,13 +35,30 @@ test('consent save, notify, and confirmations use fixed paths', () => {
     phoneNumber: PHONE,
     patientName: 'Alex',
     messageType: 'renewal',
+    sentBy: 'DEMO',
   });
   assert.equal(notify.path, '/notify');
   assert.equal(notify.body.message_type, 'renewal');
   assert.equal(notify.body.patient_name, 'Alex');
+  assert.equal(notify.body.sent_by, 'DEMO');
 
   const ready = notifySend({ phoneNumber: PHONE, patientName: 'Alex' });
   assert.equal(ready.body.message_type, 'ready');
+  assert.equal(Object.hasOwn(ready.body, 'sent_by'), false);
+
+  const blankSender = notifySend({
+    phoneNumber: PHONE,
+    patientName: 'Alex',
+    messageType: 'ready',
+    sentBy: '   ',
+  });
+  assert.equal(Object.hasOwn(blankSender.body, 'sent_by'), false);
+
+  const history = messagesHistory(PHONE);
+  assert.equal(history.method, 'POST');
+  assert.equal(history.path, '/messages/history');
+  assert.deepEqual(history.body, { phone_number: PHONE });
+  assert.equal(history.path.includes(PHONE), false);
 
   assert.deepEqual(confirmationsList(), {
     method: 'GET',
@@ -48,7 +66,7 @@ test('consent save, notify, and confirmations use fixed paths', () => {
     body: null,
   });
 
-  for (const req of [save, notify, confirmationsList()]) {
+  for (const req of [save, notify, confirmationsList(), history]) {
     assert.equal(req.path.includes(PHONE), false);
     assertSafeRequest(req.method, req.path);
   }
@@ -70,6 +88,9 @@ test('phone numbers in the URL are rejected', () => {
   assert.throws(() => assertSafeRequest('POST', `/consent/lookup?phone_number=${PHONE}`), /Blocked API path/);
   assert.throws(() => assertSafeRequest('GET', '/consent/lookup'), /Blocked API path/);
   assert.throws(() => assertSafeRequest('POST', '/pharmacy/secret'), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('POST', `/messages/${PHONE}/history`), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('GET', '/messages/history'), /Blocked API path/);
+  assertSafeRequest('POST', '/messages/history');
 });
 
 function pngSize(buf) {
@@ -110,7 +131,8 @@ test('manifest grants only storage and one Priorx HTTPS match', () => {
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.2.0');
+  assert.equal(manifest.version, '1.3.0');
+  assert.deepEqual(manifest.content_scripts[0].js, ['priorx-search.js', 'content.js']);
   assert.equal(manifest.minimum_chrome_version, '109');
   assert.equal(manifest.incognito, 'not_allowed');
   assert.equal(manifest.storage.managed_schema, 'managed_schema.json');
@@ -136,6 +158,19 @@ test('extension source no longer intercepts page requests or reads config.js', (
     assert.equal(content.includes(`getElementById('${id}')`), true, id);
   }
   assert.equal(content.includes('/4502812786.Web/'), true);
+  assert.equal(content.includes('Réponses'), true);
+  assert.equal(content.includes('Historique'), true);
+  assert.equal(content.includes('Aucun message envoyé pour ce patient.'), true);
+  assert.equal(content.includes('Numéro copié — collez-le dans la recherche (F3)'), true);
+  assert.equal(content.includes('data-notify-type="ready"'), true);
+  assert.equal(content.includes('data-notify-type="partial"'), true);
+  assert.equal(content.includes('data-notify-type="new_prescription"'), true);
+  assert.equal(content.includes('data-notify-type="renewal"'), true);
+  assert.equal(content.includes('Envoyer "commande prête"?'), true);
+
+  assert.equal(background.includes('sentBy: patient.user'), true);
+  assert.equal(background.includes('MESSAGES_HISTORY'), true);
+  assert.equal(background.includes("L'historique n'est pas disponible. Mettez à jour le serveur avec cette extension."), true);
 
   for (const source of [background, content]) {
     assert.equal(source.includes('XMLHttpRequest'), false);

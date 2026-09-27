@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NotiRx — Companion Pharmacie",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "minimum_chrome_version": "109",
   "incognito": "not_allowed",
   "description": "Envoie un SMS au patient depuis Priorx : commande prête, médicament manquant, nouvelle ordonnance, renouvellement.",
@@ -24,7 +24,7 @@
   "content_scripts": [
     {
       "matches": ["https://4502812786.priorx.ca/*"],
-      "js": ["content.js"],
+      "js": ["priorx-search.js", "content.js"],
       "run_at": "document_idle"
     }
   ],

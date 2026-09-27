@@ -6,6 +6,7 @@ import {
   confirmationsList,
   consentLookup,
   consentSave,
+  messagesHistory,
   notifySend,
 } from './api-contract.mjs';
 import { pickRuntimeConfig } from './runtime-config.mjs';
@@ -55,8 +56,14 @@ async function apiRequest(method, path, body = null) {
   if (body) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${apiBaseUrl}${path}`, opts);
-  if (!res.ok) throw new Error(`API ${method} ${path} → ${res.status}`);
-  return res.json();
+  if (!res.ok) {
+    const error = new Error(`API ${method} ${path} → ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
+  const text = await res.text();
+  if (!text) return {};
+  return JSON.parse(text);
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -88,6 +95,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'CONFIRMATION_DISMISS':
       handleConfirmationDismiss(msg.confirmationId, sendResponse);
+      return true;
+
+    case 'MESSAGES_HISTORY':
+      handleMessagesHistory(msg.phoneNumber, sendResponse);
       return true;
 
     case 'RETRY_PATIENT': {
@@ -169,6 +180,7 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
       phoneNumber: patient.phoneRaw,
       patientName: patient.firstName,
       messageType,
+      sentBy: patient.user,
     });
     const result = await apiRequest(req.method, req.path, req.body);
     broadcastToPanel(tabId, { type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
@@ -189,6 +201,24 @@ async function handleConfirmationsList(sendResponse) {
     sendResponse({ ok: true, confirmations });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
+  }
+}
+
+async function handleMessagesHistory(phoneNumber, sendResponse) {
+  try {
+    const req = messagesHistory(phoneNumber);
+    const result = await apiRequest(req.method, req.path, req.body);
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    sendResponse({ ok: true, messages });
+  } catch (err) {
+    const unavailable = err.status === 404;
+    sendResponse({
+      ok: false,
+      unavailable,
+      error: unavailable
+        ? "L'historique n'est pas disponible. Mettez à jour le serveur avec cette extension."
+        : "Impossible de charger l'historique.",
+    });
   }
 }
 
