@@ -1,9 +1,13 @@
+import { normalizeApiBaseUrl, normalizeApiKey, pickRuntimeConfig } from './runtime-config.mjs';
+
 const HOST_PLACEHOLDER = 'FILL-IN-PRIORX-HOST.example';
 
 const urlInput = document.getElementById('api-base-url');
 const keyInput = document.getElementById('api-key');
 const statusEl = document.getElementById('status');
 const hostWarning = document.getElementById('host-warning');
+const intro = document.getElementById('intro');
+const submitButton = document.querySelector('#config-form button[type="submit"]');
 
 function showStatus(text, ok) {
   statusEl.textContent = text;
@@ -28,36 +32,56 @@ function showHostWarning() {
   hostWarning.hidden = true;
 }
 
-function normalizeBaseUrl(raw) {
-  let url;
+function lockManagedForm(message, ok) {
+  urlInput.disabled = true;
+  keyInput.disabled = true;
+  keyInput.value = '';
+  keyInput.placeholder = 'Définie par l’administrateur';
+  urlInput.required = false;
+  keyInput.required = false;
+  submitButton.disabled = true;
+  intro.textContent = 'L’adresse du service et la clé API de cette pharmacie sont fournies par l’administrateur de cet ordinateur.';
+  showStatus(message, ok);
+}
+
+async function readArea(area) {
   try {
-    url = new URL(String(raw).trim());
+    return await area.get(['apiBaseUrl', 'apiKey']);
   } catch {
-    return null;
+    return {};
   }
-  if (url.protocol !== 'https:') return null;
-  if (url.username || url.password) return null;
-  if (url.search || url.hash) return null;
-  const path = url.pathname.replace(/\/+$/, '');
-  return `${url.origin}${path}`;
 }
 
 async function load() {
   showHostWarning();
-  const { apiBaseUrl = '', apiKey = '' } = await chrome.storage.local.get(['apiBaseUrl', 'apiKey']);
-  urlInput.value = apiBaseUrl;
-  keyInput.value = apiKey;
+  const [managed, local] = await Promise.all([
+    readArea(chrome.storage.managed),
+    readArea(chrome.storage.local),
+  ]);
+  const picked = pickRuntimeConfig(managed, local);
+  if (picked.source === 'managed') {
+    if (picked.ok) urlInput.value = picked.apiBaseUrl;
+    lockManagedForm(
+      picked.ok
+        ? 'Configuration administrateur active. Rechargez l’onglet Priorx.'
+        : 'La configuration fournie par l’administrateur est incomplète ou invalide.',
+      picked.ok,
+    );
+    return;
+  }
+  urlInput.value = local.apiBaseUrl || '';
+  keyInput.value = local.apiKey || '';
 }
 
 document.getElementById('config-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const apiBaseUrl = normalizeBaseUrl(urlInput.value);
-  const apiKey = keyInput.value.trim();
+  const apiBaseUrl = normalizeApiBaseUrl(urlInput.value);
+  const apiKey = normalizeApiKey(keyInput.value);
   if (!apiBaseUrl) {
     showStatus('L’adresse API doit être une URL https, sans identifiant dans l’adresse.', false);
     return;
   }
-  if (!apiKey || /\s/.test(apiKey) || apiKey.length > 256) {
+  if (!apiKey) {
     showStatus('Entrez la clé API, sans espace.', false);
     return;
   }

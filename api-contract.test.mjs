@@ -72,6 +72,11 @@ test('phone numbers in the URL are rejected', () => {
   assert.throws(() => assertSafeRequest('POST', '/pharmacy/secret'), /Blocked API path/);
 });
 
+function pngSize(buf) {
+  assert.equal(buf.subarray(0, 8).toString('binary'), '\x89PNG\r\n\x1a\n');
+  return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+}
+
 test('manifest grants only storage and one Priorx HTTPS match', () => {
   const manifest = JSON.parse(readFileSync(new URL('./manifest.json', import.meta.url), 'utf8'));
   const pattern = 'https://FILL-IN-PRIORX-HOST.example/*index.aspx*';
@@ -80,7 +85,21 @@ test('manifest grants only storage and one Priorx HTTPS match', () => {
   assert.deepEqual(manifest.content_scripts[0].matches, [pattern]);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.1.0');
+  assert.equal(manifest.version, '1.2.0');
+  assert.equal(manifest.minimum_chrome_version, '109');
+  assert.equal(manifest.incognito, 'not_allowed');
+  assert.equal(manifest.storage.managed_schema, 'managed_schema.json');
+  assert.equal(manifest.update_url, undefined);
+  assert.equal(manifest.key, undefined);
+  assert.ok(manifest.description.length > 0);
+  assert.ok(manifest.description.length <= 132, manifest.description.length);
+  for (const size of ['16', '48', '128']) {
+    assert.equal(manifest.icons[size], `icons/icon${size}.png`);
+    assert.deepEqual(
+      pngSize(readFileSync(new URL(`./icons/icon${size}.png`, import.meta.url))),
+      [Number(size), Number(size)],
+    );
+  }
 });
 
 test('extension source no longer intercepts page requests or reads config.js', () => {

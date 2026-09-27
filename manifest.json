@@ -1,12 +1,17 @@
 {
   "manifest_version": 3,
   "name": "NotiRx — Companion Pharmacie",
-  "version": "1.1.0",
-  "description": "Boutons SMS sur Priorx pour le personnel de la pharmacie — JT Automatisation",
+  "version": "1.2.0",
+  "minimum_chrome_version": "109",
+  "incognito": "not_allowed",
+  "description": "Envoie un SMS au patient depuis Priorx : commande prête, médicament manquant, nouvelle ordonnance, renouvellement.",
 
   "permissions": [
     "storage"
   ],
+  "storage": {
+    "managed_schema": "managed_schema.json"
+  },
   "host_permissions": [
     "https://FILL-IN-PRIORX-HOST.example/*index.aspx*"
   ],

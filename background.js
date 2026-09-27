@@ -8,6 +8,7 @@ import {
   consentSave,
   notifySend,
 } from './api-contract.mjs';
+import { pickRuntimeConfig } from './runtime-config.mjs';
 
 // Keyed by tabId — current patient and consent for that Priorx tab.
 const tabState = {};
@@ -15,17 +16,27 @@ const tabState = {};
 // Content-script messages include sender.tab.id. The toolbar icon does too.
 let activeTabId = null;
 
+async function readStorageArea(area) {
+  try {
+    return await area.get(['apiBaseUrl', 'apiKey']);
+  } catch {
+    return {};
+  }
+}
+
 async function getConfig() {
-  const stored = await chrome.storage.local.get(['apiBaseUrl', 'apiKey']);
-  const apiBaseUrl = typeof stored.apiBaseUrl === 'string' ? stored.apiBaseUrl.replace(/\/$/, '') : '';
-  const apiKey = typeof stored.apiKey === 'string' ? stored.apiKey : '';
-  if (!apiBaseUrl || !apiKey) {
+  const [managed, local] = await Promise.all([
+    readStorageArea(chrome.storage.managed),
+    readStorageArea(chrome.storage.local),
+  ]);
+  const picked = pickRuntimeConfig(managed, local);
+  if (!picked.ok && picked.source === 'managed') {
+    throw new Error('La configuration fournie par l’administrateur est incomplète ou invalide.');
+  }
+  if (!picked.ok) {
     throw new Error('Configuration manquante. Ouvrez les options de NotiRx.');
   }
-  if (!apiBaseUrl.startsWith('https://')) {
-    throw new Error('Adresse API invalide. Corrigez-la dans les options de NotiRx.');
-  }
-  return { apiBaseUrl, apiKey };
+  return picked;
 }
 
 async function apiRequest(method, path, body = null) {
@@ -207,6 +218,9 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const { apiBaseUrl, apiKey } = await chrome.storage.local.get(['apiBaseUrl', 'apiKey']);
-  if (!apiBaseUrl || !apiKey) chrome.runtime.openOptionsPage();
+  try {
+    await getConfig();
+  } catch {
+    chrome.runtime.openOptionsPage();
+  }
 });

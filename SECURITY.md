@@ -10,7 +10,7 @@ The manifest asks for:
 
 | Permission | Why it is there |
 |---|---|
-| `storage` | The API address and the API key are typed on the extension’s Options page and saved in this browser profile (`chrome.storage.local`). |
+| `storage` | The API address and the API key are typed on the extension’s Options page and saved in this browser profile (`chrome.storage.local`). If an administrator has set those two values by enterprise policy, the extension reads them from `chrome.storage.managed` instead. |
 | One host permission | `https://FILL-IN-PRIORX-HOST.example/*index.aspx*` — the Priorx site, HTTPS only, and only addresses that contain `index.aspx`. |
 | The same pattern as a content script | That is what draws the widget on the patient file. |
 
@@ -70,18 +70,20 @@ On the pharmacy computer, open the extension’s Options and enter:
 
 Both are stored in the browser profile on that computer. Copying the extension folder does not copy the key. Anyone who can use that browser profile can use the key. It is still one shared key for the workstation; individual logins would be a later backend change.
 
+An administrator can set the same two values by enterprise policy (`apiBaseUrl` and `apiKey` in `managed_schema.json`). When either value is present in that policy, the policy is what the extension uses, and the Options page no longer accepts a different key. The policy value lives on the managed computers, not in this repository.
+
 There is no `config.js` in this version. If the pharmacy computer still has a `config.js` from the previous install, delete that file after the key has been saved in Options, so the key is not left in the folder.
 
 Do not commit the key, and do not put it in `manifest.json`.
 
 ## Install and update
 
-NotiRx is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons.
+The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
 1. Copy this folder to the pharmacy computer. Do not copy a `config.js`.
 2. In `manifest.json`, replace `FILL-IN-PRIORX-HOST.example` in both lines with the Priorx host. Keep `https://` and `/*index.aspx*`.
-3. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.1.0**.
+3. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.2.0**.
 4. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
 5. Reload the Priorx tab and open a patient file. The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. The OUI list is the **Confirm.** tab.
 
-The widget stays off other websites, and off Priorx pages that are not the patient file.
+The widget stays off other websites, and off Priorx pages that are not the patient file. It does not run in a private (incognito) window.
