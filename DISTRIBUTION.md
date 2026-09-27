@@ -4,15 +4,17 @@ Nothing in this repository publishes NotiRx. Uploading to a store, and installin
 
 Today the extension is copied on a USB stick and loaded unpacked in developer mode. That copy does not update itself. A new version means another copy of the folder and a click on Reload. A store listing or an enterprise force-install gives pharmacists one install and then automatic updates.
 
-## What Josi fills in before any store upload
+## This store’s Priorx host
 
-The Priorx address is still the one site setting, and it is still unknown in this repository:
+This package is limited to one host, written twice in `manifest.json` (`host_permissions` and `content_scripts.matches`):
 
-`https://FILL-IN-PRIORX-HOST.example/*index.aspx*`
+`https://4502812786.priorx.ca/*`
 
-It is written twice in `manifest.json` (`host_permissions` and `content_scripts.matches`). Replace `FILL-IN-PRIORX-HOST.example` in both lines with the host from the Priorx address bar (between `https://` and the next `/`). Leave `https://` and `/*index.aspx*` as they are. Both lines must stay identical.
+That covers the patient file at `https://4502812786.priorx.ca/4502812786.Web/index.aspx`. The widget still reads the same element ids (`BA01_LastName`, `BA01_FirstName`, `BA01_Info2`, `LoginName1`). The `/4502812786.Web/` folder does not change those ids. Pages on this host without `BA01_LastName` do not show the widget.
 
-Do this before building the zip. After a pharmacist installs from the store, they cannot edit `manifest.json`. Changing the host later means a new version upload.
+Each store has its own subdomain under `priorx.ca`, and the subdomain is that store’s phone number. Another store needs its own exact host added in both manifest lists, for example `https://<that-store-phone>.priorx.ca/*`, then a new version. Do not replace this with `https://*.priorx.ca/*`.
+
+After a pharmacist installs from the store, they cannot edit `manifest.json`. Adding a store means a new upload.
 
 The privacy-policy link is a second placeholder. It is not a manifest field. Chrome and Edge ask for it in the developer dashboard, and they reject an unknown key in `manifest.json`.
 
@@ -43,13 +45,13 @@ Checked in this package: `icons/icon16.png` is 16×16, `icons/icon48.png` is 48�
 
 ## Zip for the stores
 
-From the extension folder, after the Priorx host is filled in:
+From the extension folder:
 
 ```sh
 sh scripts/pack-extension.sh
 ```
 
-The script stops if the placeholder host is still in `manifest.json`. It writes `dist/notirx-1.2.0.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
+The script stops unless both match patterns are exactly `https://4502812786.priorx.ca/*`. It writes `dist/notirx-1.2.0.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
 
 The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
 
@@ -60,7 +62,7 @@ Leave out `test.html`, the test files, `.git`, and any `config.js`.
 Pharmacists open one link, click to install, and later versions arrive automatically. The listing does not appear in store search. Anyone who has the link can still open it, so the link is not a secret.
 
 1. Register a Chrome Web Store developer account if you do not already have one. Google charges a one-time registration fee. This repository does not do that.
-2. Confirm the Priorx host and run `sh scripts/pack-extension.sh`.
+2. Run `sh scripts/pack-extension.sh`. The zip is limited to this store’s Priorx host.
 3. In the [developer dashboard](https://chrome.google.com/webstore/devconsole), create a new item and upload the zip.
 4. Set visibility to **Unlisted**.
 5. Paste the privacy-policy URL into the dashboard’s privacy-policy field.
@@ -73,7 +75,7 @@ Text for the permission boxes:
 
 - **Single purpose:** Lets pharmacy staff send one of four text messages about the prescription that is open in Priorx, and shows patients who replied OUI.
 - **storage:** Saves the API address and API key typed on the Options page in this browser, or reads those two values when an administrator sets them by policy.
-- **Host permission:** Runs only on the Priorx patient-file pages (HTTPS, addresses containing `index.aspx`) so it can read the name, phone, and signed-in staff name already shown on that page.
+- **Host permission:** Runs only on `https://4502812786.priorx.ca`. The widget reads the name, phone, and signed-in staff name when those fields are on the page (the patient file under `/4502812786.Web/`). Another store is a different subdomain and is not included.
 
 Data to declare in the privacy questions: phone number, patient first name, staff name when consent is saved, and which of the four messages was chosen. The last name stays on the computer. The extension does not collect account passwords or browsing history.
 

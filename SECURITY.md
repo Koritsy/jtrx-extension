@@ -11,22 +11,20 @@ The manifest asks for:
 | Permission | Why it is there |
 |---|---|
 | `storage` | The API address and the API key are typed on the extension’s Options page and saved in this browser profile (`chrome.storage.local`). If an administrator has set those two values by enterprise policy, the extension reads them from `chrome.storage.managed` instead. |
-| One host permission | `https://FILL-IN-PRIORX-HOST.example/*index.aspx*` — the Priorx site, HTTPS only, and only addresses that contain `index.aspx`. |
-| The same pattern as a content script | That is what draws the widget on the patient file. |
+| One host permission | `https://4502812786.priorx.ca/*` — this pharmacy’s Priorx site, HTTPS only. |
+| The same pattern as a content script | That is what draws the widget. |
 
 `storage` is required for the Options page. `alarms` was declared before and never used; it is removed.
 
-The host pattern is written twice in `manifest.json` (`host_permissions` and `content_scripts.matches`) because Chrome keeps those as two fields. They are the same value. Search for `FILL-IN-PRIORX-HOST.example` and replace that host in both lines with the host from the Priorx address bar (the text between `https://` and the next `/`). Leave `/*index.aspx*` in place.
+The host pattern is written twice in `manifest.json` (`host_permissions` and `content_scripts.matches`) because Chrome keeps those as two fields. Both are `https://4502812786.priorx.ca/*`. There is no `*.priorx.ca` wildcard. Each store has its own subdomain (the store phone number). Another store needs its own exact `https://<phone>.priorx.ca/*` line added in both places, then a new version of the extension.
 
-The Priorx host is not recorded anywhere in this repository’s history, so the placeholder is intentional. Josi fills it in on the pharmacy computer before loading the extension. The Options page shows a reminder while the placeholder is still there.
-
-If staff open Priorx on a second host, add that exact HTTPS pattern the same way. Do not put a `*` host back.
+The patient file for this store is `https://4502812786.priorx.ca/4502812786.Web/index.aspx`. The content script matches the whole host, then looks for element ids on that page. Those ids are not tied to the `/4502812786.Web/` folder. On any other page of this host that does not contain `BA01_LastName`, the script returns without drawing the widget.
 
 The extension does not request a host permission for the API. Calls to the API are normal HTTPS requests from the background script. That works while the API answers browser calls (today, cross-origin access is open). If that is tightened later, allow the extension’s origin, or add that exact API host under `host_permissions`.
 
 ## What the extension reads on the page
 
-The script runs only on the matched Priorx address, and only when the patient file is on screen (the page contains `BA01_LastName`).
+The script is injected only on `https://4502812786.priorx.ca`, including pages under `/4502812786.Web/`. It draws the widget only when the patient file is on screen (the page contains `BA01_LastName`).
 
 | On the page | Used for |
 |---|---|
@@ -80,10 +78,9 @@ Do not commit the key, and do not put it in `manifest.json`.
 
 The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
-1. Copy this folder to the pharmacy computer. Do not copy a `config.js`.
-2. In `manifest.json`, replace `FILL-IN-PRIORX-HOST.example` in both lines with the Priorx host. Keep `https://` and `/*index.aspx*`.
-3. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.2.0**.
-4. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
-5. Reload the Priorx tab and open a patient file. The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. The OUI list is the **Confirm.** tab.
+1. Copy this folder to the pharmacy computer. Do not copy a `config.js`. The manifest is already limited to `https://4502812786.priorx.ca/*`.
+2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.2.0**.
+3. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
+4. Reload the Priorx tab and open a patient file (`/4502812786.Web/index.aspx`). The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. The OUI list is the **Confirm.** tab.
 
 The widget stays off other websites, and off Priorx pages that are not the patient file. It does not run in a private (incognito) window.

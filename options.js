@@ -1,6 +1,6 @@
 import { normalizeApiBaseUrl, normalizeApiKey, pickRuntimeConfig } from './runtime-config.mjs';
 
-const HOST_PLACEHOLDER = 'FILL-IN-PRIORX-HOST.example';
+const STORE_HOST_PATTERN = 'https://4502812786.priorx.ca/*';
 
 const urlInput = document.getElementById('api-base-url');
 const keyInput = document.getElementById('api-key');
@@ -24,9 +24,9 @@ function showHostWarning() {
     hostWarning.textContent = 'Dans manifest.json, host_permissions et content_scripts.matches doivent contenir exactement la même adresse Priorx.';
     return;
   }
-  if ((matches[0] || '').includes(HOST_PLACEHOLDER)) {
+  if (matches[0] !== STORE_HOST_PATTERN) {
     hostWarning.hidden = false;
-    hostWarning.textContent = 'Le site Priorx n’est pas encore indiqué. Dans manifest.json, remplacez FILL-IN-PRIORX-HOST.example aux deux endroits par le nom d’hôte affiché dans la barre d’adresse de Priorx (entre https:// et le / suivant), puis rechargez l’extension. Tant que ce n’est pas fait, les boutons n’apparaissent pas.';
+    hostWarning.textContent = 'Cette copie est limitée à https://4502812786.priorx.ca. Une autre succursale a son propre sous-domaine priorx.ca et doit être ajoutée telle quelle, sans *.priorx.ca.';
     return;
   }
   hostWarning.hidden = true;

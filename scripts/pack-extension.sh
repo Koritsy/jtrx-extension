@@ -1,13 +1,20 @@
 #!/bin/sh
 # Build the zip to upload to the Chrome Web Store or Edge Add-ons.
-# Does not publish anything. Refuses to pack while the Priorx host is still the placeholder.
+# Does not publish anything. Refuses to pack unless both match patterns are this store only.
 set -eu
 cd "$(dirname "$0")/.."
 
-if grep -q 'FILL-IN-PRIORX-HOST.example' manifest.json; then
-  echo "Replace FILL-IN-PRIORX-HOST.example in both manifest.json lines before packing a store zip." >&2
-  exit 1
-fi
+python3 - <<'PY'
+import json, sys
+manifest = json.load(open("manifest.json"))
+expected = "https://4502812786.priorx.ca/*"
+hosts = manifest.get("host_permissions")
+matches = manifest.get("content_scripts", [{}])[0].get("matches")
+if hosts != [expected] or matches != [expected]:
+    sys.exit("manifest.json must match only https://4502812786.priorx.ca/* (no *.priorx.ca).")
+if "*.priorx.ca" in json.dumps(manifest):
+    sys.exit("Refusing a wildcard across priorx.ca.")
+PY
 
 version=$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')
 mkdir -p dist

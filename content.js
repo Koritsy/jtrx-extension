@@ -1,5 +1,9 @@
 // NotiRx content script — reads a few Priorx fields and draws the widget.
-// Page network traffic is left untouched.
+// Injected only on https://4502812786.priorx.ca, including the patient file at
+// /4502812786.Web/index.aspx. The fields are document ids (BA01_LastName,
+// BA01_FirstName, BA01_Info2, LoginName1), so the /4502812786.Web/ folder
+// does not change which elements are read. If BA01_LastName is absent the
+// script returns without drawing anything. Page network traffic is left untouched.
 
 (function () {
   if (!document.getElementById('BA01_LastName')) return;

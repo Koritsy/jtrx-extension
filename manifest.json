@@ -13,7 +13,7 @@
     "managed_schema": "managed_schema.json"
   },
   "host_permissions": [
-    "https://FILL-IN-PRIORX-HOST.example/*index.aspx*"
+    "https://4502812786.priorx.ca/*"
   ],
 
   "background": {
@@ -23,7 +23,7 @@
 
   "content_scripts": [
     {
-      "matches": ["https://FILL-IN-PRIORX-HOST.example/*index.aspx*"],
+      "matches": ["https://4502812786.priorx.ca/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

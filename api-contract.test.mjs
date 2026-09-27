@@ -77,12 +77,37 @@ function pngSize(buf) {
   return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
 }
 
+function chromeMatch(pattern, href) {
+  const url = new URL(href);
+  const parsed = /^(https|\*):\/\/(\*|\*\.[^/*]+|[^/*]+)(\/.*)$/.exec(pattern);
+  assert.ok(parsed, pattern);
+  const [, scheme, host, path] = parsed;
+  if (scheme !== '*' && `${scheme}:` !== url.protocol) return false;
+  if (host === '*') {
+    // any host
+  } else if (host.startsWith('*.')) {
+    const suffix = host.slice(1);
+    if (url.hostname === host.slice(2) || !url.hostname.endsWith(suffix)) return false;
+  } else if (host !== url.hostname) {
+    return false;
+  }
+  const pathRe = new RegExp(`^${path.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
+  return pathRe.test(url.pathname);
+}
+
 test('manifest grants only storage and one Priorx HTTPS match', () => {
   const manifest = JSON.parse(readFileSync(new URL('./manifest.json', import.meta.url), 'utf8'));
-  const pattern = 'https://FILL-IN-PRIORX-HOST.example/*index.aspx*';
+  const pattern = 'https://4502812786.priorx.ca/*';
+  const patientFile = 'https://4502812786.priorx.ca/4502812786.Web/index.aspx?w=Priorx04&c=fr-CA';
   assert.deepEqual(manifest.permissions, ['storage']);
   assert.deepEqual(manifest.host_permissions, [pattern]);
   assert.deepEqual(manifest.content_scripts[0].matches, [pattern]);
+  assert.equal(chromeMatch(pattern, patientFile), true);
+  assert.equal(chromeMatch(pattern, 'https://9995550100.priorx.ca/9995550100.Web/index.aspx'), false);
+  assert.equal(chromeMatch(pattern, 'http://4502812786.priorx.ca/4502812786.Web/index.aspx'), false);
+  assert.equal(chromeMatch(pattern, 'https://priorx.ca/4502812786.Web/index.aspx'), false);
+  assert.equal(JSON.stringify(manifest).includes('*.priorx.ca'), false);
+  assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
   assert.equal(manifest.version, '1.2.0');
@@ -106,6 +131,11 @@ test('extension source no longer intercepts page requests or reads config.js', (
   const background = readFileSync(new URL('./background.js', import.meta.url), 'utf8');
   const content = readFileSync(new URL('./content.js', import.meta.url), 'utf8');
   const testPage = readFileSync(new URL('./test.html', import.meta.url), 'utf8');
+
+  for (const id of ['BA01_LastName', 'BA01_FirstName', 'BA01_Info2', 'LoginName1']) {
+    assert.equal(content.includes(`getElementById('${id}')`), true, id);
+  }
+  assert.equal(content.includes('/4502812786.Web/'), true);
 
   for (const source of [background, content]) {
     assert.equal(source.includes('XMLHttpRequest'), false);
