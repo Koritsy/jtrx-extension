@@ -32,6 +32,7 @@ The script is injected only on `https://4502812786.priorx.ca`, including pages u
 | `BA01_FirstName` | Shown in the widget. Sent to the backend only after a staff member confirms an SMS, because the text includes the first name. |
 | `BA01_Info2` | The phone is the part before ` - `, digits only. A street address after ` - ` is left on the page. |
 | `LoginName1` | The signed-in staff name. Sent as `recorded_by` when staff save a yes or no consent, and as `sent_by` when they confirm an SMS (omitted when the field is empty). |
+| Language field next to the name | The ids are guesses in `PRIORX_LANGUAGE_SELECTORS` in `priorx-language.js`. The extension sends only `EN` or `FR` on `POST /notify`. EN, ENG, ANGLAIS, and ENGLISH become `EN`. Anything else, including a missing or unreadable field, becomes `FR`. A send is not blocked when the field cannot be read. |
 
 The widget is drawn in a closed shadow root. Its buttons are separate from Priorx’s page.
 
@@ -51,7 +52,7 @@ The phone number is the JSON field `phone_number`. It is not part of the web add
 |---|---|---|
 | Open a patient file | `POST /consent/lookup` | `phone_number` |
 | Save yes or no | `POST /consent` | `phone_number`, `consent`, `recorded_by` |
-| Confirm an SMS | `POST /notify` | `phone_number`, `patient_name` (first name), `message_type`, and `sent_by` when the staff login is known |
+| Confirm an SMS | `POST /notify` | `phone_number`, `patient_name` (first name), `message_type`, `language` (`EN` or `FR`), and `sent_by` when the staff login is known |
 | Open the Réponses list | `GET /confirmations` | none |
 | Mark a reply done | `POST /confirmations/{confirmation_id}/dismiss` | none |
 | Open Historique for the file on screen | `POST /messages/history` | `phone_number` |

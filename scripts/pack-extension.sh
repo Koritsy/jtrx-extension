@@ -27,6 +27,7 @@ zip -r "$out" \
   background.js \
   priorx-search.js \
   priorx-lock.js \
+  priorx-language.js \
   content.js \
   api-contract.mjs \
   runtime-config.mjs \

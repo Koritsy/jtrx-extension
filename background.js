@@ -191,6 +191,11 @@ async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatie
   }
 }
 
+function messageLanguage(msgPatient, patient) {
+  const value = msgPatient?.language ?? patient?.language;
+  return value === 'EN' ? 'EN' : 'FR';
+}
+
 async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
   const patient = tabState[tabId]?.patient ?? msgPatient;
   if (!patient) return sendResponse({ ok: false, error: 'No patient' });
@@ -201,6 +206,7 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
       patientName: patient.firstName,
       messageType,
       sentBy: patient.user,
+      language: messageLanguage(msgPatient, patient),
     });
     const result = await apiRequest(req.method, req.path, req.body);
     broadcastToPanel(tabId, { type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });

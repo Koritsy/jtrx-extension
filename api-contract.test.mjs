@@ -41,9 +41,26 @@ test('consent save, notify, and confirmations use fixed paths', () => {
   assert.equal(notify.body.message_type, 'renewal');
   assert.equal(notify.body.patient_name, 'Alex');
   assert.equal(notify.body.sent_by, 'DEMO');
+  assert.equal(notify.body.language, 'FR');
+
+  const english = notifySend({
+    phoneNumber: PHONE,
+    patientName: 'Alex',
+    messageType: 'ready',
+    language: 'EN',
+  });
+  assert.equal(english.body.language, 'EN');
+
+  const rawEnglish = notifySend({
+    phoneNumber: PHONE,
+    patientName: 'Alex',
+    language: 'anglais',
+  });
+  assert.equal(rawEnglish.body.language, 'FR');
 
   const ready = notifySend({ phoneNumber: PHONE, patientName: 'Alex' });
   assert.equal(ready.body.message_type, 'ready');
+  assert.equal(ready.body.language, 'FR');
   assert.equal(Object.hasOwn(ready.body, 'sent_by'), false);
 
   const blankSender = notifySend({
@@ -132,7 +149,12 @@ test('manifest grants only storage and one Priorx HTTPS match', () => {
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
   assert.equal(manifest.version, '1.3.0');
-  assert.deepEqual(manifest.content_scripts[0].js, ['priorx-search.js', 'priorx-lock.js', 'content.js']);
+  assert.deepEqual(manifest.content_scripts[0].js, [
+    'priorx-search.js',
+    'priorx-lock.js',
+    'priorx-language.js',
+    'content.js',
+  ]);
   assert.equal(manifest.minimum_chrome_version, '109');
   assert.equal(manifest.incognito, 'not_allowed');
   assert.equal(manifest.storage.managed_schema, 'managed_schema.json');
@@ -170,8 +192,12 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('priorxUnlocked'), true);
   assert.equal(content.includes('notirx-lock-debug'), true);
   assert.equal(content.includes('host.hidden = true'), true);
+  assert.equal(content.includes('lang-badge'), true);
+  assert.equal(content.includes('readPatientLanguage'), true);
+  assert.equal(content.includes('PRIORX_LANGUAGE_SELECTORS'), true);
 
   assert.equal(background.includes('sentBy: patient.user'), true);
+  assert.equal(background.includes('language: messageLanguage(msgPatient, patient)'), true);
   assert.equal(background.includes('Priorx est verrouillé.'), true);
   assert.equal(background.includes('MESSAGES_HISTORY'), true);
   assert.equal(background.includes("L'historique n'est pas disponible. Mettez à jour le serveur avec cette extension."), true);

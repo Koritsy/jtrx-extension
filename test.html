@@ -12,6 +12,9 @@
             padding: 14px 16px; margin-bottom: 20px; min-height: 70px; }
     .card-name { font-size: 16px; font-weight: 700; color: #1a237e; }
     .card-info { font-size: 13px; color: #555; margin-top: 4px; }
+    .lang-field { display: inline-block; min-width: 2.5em; margin-left: 8px;
+                  padding: 0 4px; border-radius: 4px; background: #e3f2fd; color: #1565c0;
+                  font-size: 12px; font-weight: 700; }
 
     button { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px;
              font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
@@ -58,12 +61,21 @@
 
   <!-- Visible preview -->
   <div class="card">
-    <div class="card-name" id="preview-name">Aucun patient chargé</div>
+    <div class="card-name" id="preview-name">Aucun patient chargé <span id="preview-lang" class="lang-field"></span></div>
     <div class="card-info" id="preview-info"></div>
   </div>
 
   <button class="load"  onclick="load()">Charger un patient fictif</button>
   <button class="clear" onclick="clearPatient()">✕ Effacer le patient</button>
+  <label>
+    Langue fictive (à côté du nom)
+    <select id="fake-language">
+      <option value="FR">FR</option>
+      <option value="EN">EN</option>
+      <option value="anglais">anglais</option>
+      <option value="">vide</option>
+    </select>
+  </label>
 
   <h2>Recherche F3 (sans Priorx)</h2>
   <p>
@@ -114,6 +126,7 @@
   <!-- Priorx fields read by content.js. Visible here so the lock check can see them. -->
   <div id="priorx">
     <div id="BA01_LastName"></div>
+    <div id="BA01_Langue" title="Champ langue non confirmé sur Priorx"></div>
     <div id="BA01_FirstName"></div>
     <div id="BA01_Info2"></div>
     <div id="LoginName1">DEMO</div>
@@ -126,25 +139,40 @@
       if (value) el.appendChild(document.createTextNode(value));
     }
 
+    function applyFakeLanguage() {
+      const raw = document.getElementById('fake-language').value;
+      setText('BA01_Langue', raw);
+      const detected = window.NotiRxLanguage
+        ? window.NotiRxLanguage.readPatientLanguage(document)
+        : 'FR';
+      document.getElementById('preview-lang').textContent = detected;
+    }
+
     function load() {
       setText('BA01_FirstName', ', Alex');
       setText('BA01_Info2', '555-010-0199 - 100 rue Fictive, Ville-Test');
+      applyFakeLanguage();
       // Fire lastName last — content.js watches this one
       setTimeout(() => {
         setText('BA01_LastName', 'Exemple');
-        document.getElementById('preview-name').textContent = 'EXEMPLE, Alex';
+        document.getElementById('preview-name').firstChild.textContent = 'EXEMPLE, Alex ';
         document.getElementById('preview-info').textContent = '555-010-0199 — 100 rue Fictive, Ville-Test';
+        applyFakeLanguage();
       }, 50);
     }
 
     function clearPatient() {
-      ['BA01_LastName','BA01_FirstName','BA01_Info2'].forEach(id => setText(id, ''));
-      document.getElementById('preview-name').textContent = 'Aucun patient chargé';
+      ['BA01_LastName','BA01_FirstName','BA01_Info2','BA01_Langue'].forEach(id => setText(id, ''));
+      document.getElementById('preview-name').firstChild.textContent = 'Aucun patient chargé ';
       document.getElementById('preview-info').textContent = '';
+      document.getElementById('preview-lang').textContent = '';
     }
+
+    document.getElementById('fake-language').addEventListener('change', applyFakeLanguage);
   </script>
   <script src="priorx-search.js"></script>
   <script src="priorx-lock.js"></script>
+  <script src="priorx-language.js"></script>
   <script>
     const PHONE = '5550100199';
     const f3Field = document.getElementById('priorx-f3-search');
@@ -232,10 +260,16 @@
     const demoLocked = document.getElementById('demo-locked');
     const lockStatus = document.getElementById('lock-status');
 
+    function lockDebugPayload(assessment) {
+      const language = NotiRxLanguage.readPatientLanguage(document);
+      return { ...assessment.debug, language: language === 'EN' ? 'EN' : 'FR' };
+    }
+
     document.addEventListener('notirx-lock-debug', () => {
       const assessment = NotiRxLock.assessPriorxSession(document);
-      console.info('[NotiRx lock]', assessment.debug);
-      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(assessment.debug));
+      const debug = lockDebugPayload(assessment);
+      console.info('[NotiRx lock]', debug);
+      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(debug));
     });
 
     function refreshLock() {

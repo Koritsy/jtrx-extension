@@ -11,7 +11,7 @@
 //
 //   POST /consent/lookup                          { phone_number }
 //   POST /consent                                 { phone_number, consent, recorded_by }
-//   POST /notify                                  { phone_number, patient_name, message_type, sent_by? }
+//   POST /notify                                  { phone_number, patient_name, message_type, sent_by?, language }
 //   GET  /confirmations
 //   POST /confirmations/{confirmation_id}/dismiss
 //   POST /messages/history                        { phone_number }
@@ -19,6 +19,8 @@
 // message_type is ready | partial | new_prescription | renewal.
 // patient_name is the patient's first name.
 // sent_by is the staff login from LoginName1. It is omitted when that field is empty.
+// language is EN or FR. EN only when the patient file says EN, ENG, ANGLAIS, or ENGLISH.
+// Anything else, including a missing field, is FR. An older server ignores language and sends French.
 // confirmation_id is the id returned by GET /confirmations, not a phone number.
 //
 // Responses this extension reads:
@@ -59,11 +61,12 @@ export function consentSave({ phoneNumber, consent, recordedBy }) {
   };
 }
 
-export function notifySend({ phoneNumber, patientName, messageType, sentBy }) {
+export function notifySend({ phoneNumber, patientName, messageType, sentBy, language }) {
   const body = {
     phone_number: phoneNumber,
     patient_name: patientName,
     message_type: messageType || 'ready',
+    language: language === 'EN' ? 'EN' : 'FR',
   };
   if (typeof sentBy === 'string' && sentBy.trim()) {
     body.sent_by = sentBy.trim();

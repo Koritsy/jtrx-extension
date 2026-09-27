@@ -77,10 +77,20 @@
       .view { display: none; padding: 9px; }
       .view.active { display: block; }
 
+      .name-row {
+        display: flex; align-items: center; gap: 6px;
+        margin-bottom: 5px;
+      }
       .name {
         font-weight: 600; font-size: 12px;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        margin-bottom: 5px;
+        flex: 1; min-width: 0;
+      }
+      .lang-badge {
+        flex-shrink: 0;
+        font-size: 10px; font-weight: 700; letter-spacing: .4px;
+        padding: 1px 5px; border-radius: 4px;
+        background: #e3f2fd; color: #1565c0;
       }
       .badge {
         display: inline-block; padding: 2px 6px;
@@ -223,7 +233,10 @@
         </div>
 
         <div id="v-unknown" class="view">
-          <div id="up-name" class="name"></div>
+          <div class="name-row">
+            <div id="up-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <span class="badge unk">Consentement inconnu</span>
           <div class="muted">Demandez si le patient souhaite recevoir un SMS.</div>
           <div class="row">
@@ -233,7 +246,10 @@
         </div>
 
         <div id="v-opted-in" class="view">
-          <div id="oi-name" class="name"></div>
+          <div class="name-row">
+            <div id="oi-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <span class="badge yes">✓ SMS actif</span>
 
           <div id="oi-area">
@@ -270,7 +286,10 @@
         </div>
 
         <div id="v-opted-out" class="view">
-          <div id="oo-name" class="name"></div>
+          <div class="name-row">
+            <div id="oo-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <span class="badge no">✗ SMS refusé</span>
           <button id="btn-change" class="btn btn-ghost" style="margin-top:7px">Modifier</button>
         </div>
@@ -361,10 +380,18 @@
     tabDot.className = 'dot' + (color ? ` ${color}` : '');
   }
 
+  function setLanguageBadge(language) {
+    const code = language === 'EN' ? 'EN' : 'FR';
+    shadow.querySelectorAll('.lang-badge').forEach((el) => {
+      el.textContent = code;
+    });
+  }
+
   function setName(elId, p) {
     const el = $(elId);
     if (!el) return;
     el.textContent = p ? `${(p.lastName || '').toUpperCase()}, ${p.firstName || ''}`.replace(/^,\s*/, '') : '';
+    if (p) setLanguageBadge(p.language);
   }
 
   function resetNotify() {
@@ -415,6 +442,7 @@
   // Every send checks again. If the check cannot tell, it blocks.
 
   const Lock = globalThis.NotiRxLock;
+  const Lang = globalThis.NotiRxLanguage;
   let widgetLocked = true;
   let priorxWasLocked = false;
   let idleExpired = false;
@@ -433,10 +461,16 @@
     return Lock.assessPriorxSession(document, { idleExpired });
   }
 
+  function lockDebugPayload(assessment) {
+    const language = Lang ? Lang.readPatientLanguage(document) : 'FR';
+    return { ...(assessment.debug || {}), language: language === 'EN' ? 'EN' : 'FR' };
+  }
+
   function logLock(assessment) {
-    console.info('[NotiRx lock]', assessment.debug);
+    const debug = lockDebugPayload(assessment);
+    console.info('[NotiRx lock]', debug);
     try {
-      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(assessment.debug));
+      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(debug));
     } catch {
       // The page can refuse the attribute. The console line is enough.
     }
@@ -451,6 +485,9 @@
       const el = $(id);
       if (el) el.textContent = id === 'oi-confirm-text' ? '' : '';
     }
+    shadow.querySelectorAll('.lang-badge').forEach((el) => {
+      el.textContent = '';
+    });
     const confEmpty = $('conf-empty');
     const histEmpty = $('hist-empty');
     if (confEmpty) confEmpty.textContent = '';
@@ -836,6 +873,13 @@
 
   $('btn-send-yes').addEventListener('click', () => {
     if (!sessionAllowsAction()) return;
+    if (currentPatient) {
+      currentPatient = {
+        ...currentPatient,
+        language: Lang ? Lang.readPatientLanguage(document) : 'FR',
+      };
+      setLanguageBadge(currentPatient.language);
+    }
     chrome.runtime.sendMessage({
       type: 'NOTIFY_SEND',
       patient: currentPatient,
@@ -895,7 +939,10 @@
     const info2     = document.getElementById('BA01_Info2')?.textContent?.trim() || '';
     const user      = document.getElementById('LoginName1')?.textContent?.trim() || '';
     const phoneRaw  = info2.split(' - ')[0].trim().replace(/\D/g, '');
-    return { lastName, firstName, phoneRaw, user };
+    // Ids are unconfirmed. PRIORX_LANGUAGE_SELECTORS lives in priorx-language.js.
+    // Missing or unreadable language becomes FR and does not block the send.
+    const language = Lang ? Lang.readPatientLanguage(document) : 'FR';
+    return { lastName, firstName, phoneRaw, user, language };
   }
 
   function onPatientChanged() {
@@ -915,7 +962,13 @@
       currentPatient.lastName  === patient.lastName &&
       currentPatient.firstName === patient.firstName &&
       currentPatient.phoneRaw === patient.phoneRaw
-    ) return;
+    ) {
+      if (currentPatient.language !== patient.language) {
+        currentPatient = patient;
+        setLanguageBadge(patient.language);
+      }
+      return;
+    }
     currentPatient = patient;
     chrome.runtime.sendMessage({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
     fetchHistory(patient.phoneRaw);
@@ -923,14 +976,24 @@
 
   const nameTarget = document.getElementById('BA01_LastName');
   if (nameTarget) {
+    const nameWatch = nameTarget.parentElement || nameTarget;
     new MutationObserver(onPatientChanged)
-      .observe(nameTarget, { childList: true, subtree: true, characterData: true });
+      .observe(nameWatch, { childList: true, subtree: true, characterData: true });
   }
 
   const info2Target = document.getElementById('BA01_Info2');
   if (info2Target) {
     new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
       .observe(info2Target, { childList: true, subtree: true, characterData: true });
+  }
+
+  if (Lang) {
+    for (const selector of Lang.PRIORX_LANGUAGE_SELECTORS) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
+        .observe(el, { childList: true, subtree: true, characterData: true });
+    }
   }
 
   for (const eventName of ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown']) {
