@@ -8,6 +8,23 @@ const statusEl = document.getElementById('status');
 const hostWarning = document.getElementById('host-warning');
 const intro = document.getElementById('intro');
 const submitButton = document.querySelector('#config-form button[type="submit"]');
+const idleInput = document.getElementById('idle-minutes');
+const lockDebugInput = document.getElementById('lock-debug');
+
+function idleMinutesFromInput() {
+  const Lock = globalThis.NotiRxLock;
+  if (!Lock) return 10;
+  return Lock.normalizeIdleLockMinutes(idleInput.value);
+}
+
+async function saveIdleSetting() {
+  const minutes = idleMinutesFromInput();
+  idleInput.value = String(minutes);
+  await chrome.storage.local.set({
+    idleLockMinutes: minutes,
+    lockDebug: lockDebugInput.checked,
+  });
+}
 
 function showStatus(text, ok) {
   statusEl.textContent = text;
@@ -44,20 +61,31 @@ function lockManagedForm(message, ok) {
   showStatus(message, ok);
 }
 
-async function readArea(area) {
+async function readArea(area, keys) {
   try {
-    return await area.get(['apiBaseUrl', 'apiKey']);
+    return await area.get(keys);
   } catch {
     return {};
   }
 }
 
+function showIdleSetting(local) {
+  const Lock = globalThis.NotiRxLock;
+  idleInput.value = String(
+    local.idleLockMinutes == null
+      ? (Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 10)
+      : (Lock ? Lock.normalizeIdleLockMinutes(local.idleLockMinutes) : 10),
+  );
+  lockDebugInput.checked = Boolean(local.lockDebug);
+}
+
 async function load() {
   showHostWarning();
   const [managed, local] = await Promise.all([
-    readArea(chrome.storage.managed),
-    readArea(chrome.storage.local),
+    readArea(chrome.storage.managed, ['apiBaseUrl', 'apiKey']),
+    readArea(chrome.storage.local, ['apiBaseUrl', 'apiKey', 'idleLockMinutes', 'lockDebug']),
   ]);
+  showIdleSetting(local);
   const picked = pickRuntimeConfig(managed, local);
   if (picked.source === 'managed') {
     if (picked.ok) urlInput.value = picked.apiBaseUrl;
@@ -86,8 +114,16 @@ document.getElementById('config-form').addEventListener('submit', async (event) 
     return;
   }
   await chrome.storage.local.set({ apiBaseUrl, apiKey });
+  await saveIdleSetting();
   urlInput.value = apiBaseUrl;
   showStatus('Enregistré sur cet ordinateur. Rechargez l’onglet Priorx.', true);
+});
+
+idleInput.addEventListener('change', () => {
+  saveIdleSetting().catch(() => {});
+});
+lockDebugInput.addEventListener('change', () => {
+  saveIdleSetting().catch(() => {});
 });
 
 load();

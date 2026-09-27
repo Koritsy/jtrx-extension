@@ -132,7 +132,7 @@ test('manifest grants only storage and one Priorx HTTPS match', () => {
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
   assert.equal(manifest.version, '1.3.0');
-  assert.deepEqual(manifest.content_scripts[0].js, ['priorx-search.js', 'content.js']);
+  assert.deepEqual(manifest.content_scripts[0].js, ['priorx-search.js', 'priorx-lock.js', 'content.js']);
   assert.equal(manifest.minimum_chrome_version, '109');
   assert.equal(manifest.incognito, 'not_allowed');
   assert.equal(manifest.storage.managed_schema, 'managed_schema.json');
@@ -167,8 +167,12 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('data-notify-type="new_prescription"'), true);
   assert.equal(content.includes('data-notify-type="renewal"'), true);
   assert.equal(content.includes('Envoyer "commande prête"?'), true);
+  assert.equal(content.includes('priorxUnlocked'), true);
+  assert.equal(content.includes('notirx-lock-debug'), true);
+  assert.equal(content.includes('host.hidden = true'), true);
 
   assert.equal(background.includes('sentBy: patient.user'), true);
+  assert.equal(background.includes('Priorx est verrouillé.'), true);
   assert.equal(background.includes('MESSAGES_HISTORY'), true);
   assert.equal(background.includes("L'historique n'est pas disponible. Mettez à jour le serveur avec cette extension."), true);
 

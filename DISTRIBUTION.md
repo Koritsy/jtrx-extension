@@ -53,7 +53,7 @@ sh scripts/pack-extension.sh
 
 The script stops unless both match patterns are exactly `https://4502812786.priorx.ca/*`. It writes `dist/notirx-1.3.0.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
 
-The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
+The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
 
 Leave out `test.html`, the test files, `.git`, and any `config.js`.
 

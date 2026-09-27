@@ -25,8 +25,25 @@
     }
     .search-field { width: 100%; padding: 8px; font-size: 14px; margin-bottom: 8px; }
 
-    /* Hidden Priorx DOM — content.js reads these */
-    #priorx { display: none; }
+    #priorx {
+      border: 1px solid #c5cae9; border-radius: 8px; padding: 8px 10px;
+      margin: 12px 0 16px; font-size: 13px; background: #fff;
+    }
+    #priorx div { min-height: 18px; }
+    .overlay {
+      position: fixed; inset: 0; z-index: 20;
+      background: rgba(26, 35, 126, .92); color: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px;
+    }
+    .overlay[hidden] { display: none; }
+    #full-cover { background: rgba(0, 0, 0, .55); }
+    #demo-widget, #demo-locked {
+      border-radius: 8px; padding: 10px; margin-top: 8px; font-size: 13px;
+    }
+    #demo-widget { background: #e8f5e9; color: #2e7d32; }
+    #demo-locked { background: #ffebee; color: #c62828; }
+    #lock-status { white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -68,7 +85,33 @@
   <div id="search-status">En attente d’un clic.</div>
   <div id="key-log"></div>
 
-  <!-- Hidden Priorx DOM read by content.js -->
+  <h2>Écran NIP (verrouillage)</h2>
+  <p>
+    Le dossier simulé ci-dessous est visible, avec un nom d’utilisateur.
+    Afficher l’écran NIP, un champ mot de passe sans id connu, ou une couche qui couvre le dossier
+    doit masquer le widget démo. Aucun numéro n’est affiché.
+  </p>
+  <div id="demo-widget">Widget démo visible. Réponses et historique restent masqués ici.</div>
+  <div id="demo-locked" hidden>Widget masqué — session verrouillée. Aucun envoi.</div>
+  <div id="lock-status">Verrouillé : …</div>
+  <button id="btn-show-nip" class="search-btn" type="button">Afficher l’écran NIP</button>
+  <button id="btn-show-password" class="search-btn" type="button">Afficher un NIP sans id connu</button>
+  <button id="btn-cover" class="search-btn" type="button">Couvrir le dossier</button>
+  <button id="btn-clear-login" class="clear" type="button">Vider le nom d’utilisateur</button>
+  <button id="btn-hide-login" class="clear" type="button">Masquer le nom d’utilisateur</button>
+  <button id="btn-unlock" class="load" type="button">Réouvrir la session</button>
+
+  <div id="PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED" class="overlay" hidden>
+    <p>Écran NIP simulé</p>
+    <input id="txtNIP" type="password" autocomplete="off" placeholder="NIP" />
+  </div>
+  <div id="mystery-nip-layer" class="overlay" hidden>
+    <p>Champ mot de passe sans id de verrou connu</p>
+    <input id="mystery-nip" type="password" autocomplete="off" />
+  </div>
+  <div id="full-cover" class="overlay" hidden></div>
+
+  <!-- Priorx fields read by content.js. Visible here so the lock check can see them. -->
   <div id="priorx">
     <div id="BA01_LastName"></div>
     <div id="BA01_FirstName"></div>
@@ -101,6 +144,7 @@
     }
   </script>
   <script src="priorx-search.js"></script>
+  <script src="priorx-lock.js"></script>
   <script>
     const PHONE = '5550100199';
     const f3Field = document.getElementById('priorx-f3-search');
@@ -179,6 +223,72 @@
       hideField(fallbackField);
       runSearch();
     });
+
+    const nipOverlay = document.getElementById('PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED');
+    const mysteryLayer = document.getElementById('mystery-nip-layer');
+    const fullCover = document.getElementById('full-cover');
+    const loginEl = document.getElementById('LoginName1');
+    const demoWidget = document.getElementById('demo-widget');
+    const demoLocked = document.getElementById('demo-locked');
+    const lockStatus = document.getElementById('lock-status');
+
+    document.addEventListener('notirx-lock-debug', () => {
+      const assessment = NotiRxLock.assessPriorxSession(document);
+      console.info('[NotiRx lock]', assessment.debug);
+      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(assessment.debug));
+    });
+
+    function refreshLock() {
+      const result = NotiRxLock.assessPriorxSession(document);
+      lockStatus.textContent = 'Verrouillé : ' + (result.locked ? 'oui' : 'non')
+        + '\nRaisons : ' + (result.reasons.join(', ') || 'aucune');
+      demoWidget.hidden = result.locked;
+      demoLocked.hidden = !result.locked;
+      const dumped = JSON.stringify(result.debug);
+      if (dumped.includes('555')) lockStatus.textContent += '\nERREUR : un numéro est dans le diagnostic.';
+    }
+
+    function hideLockLayers() {
+      nipOverlay.hidden = true;
+      mysteryLayer.hidden = true;
+      fullCover.hidden = true;
+    }
+
+    document.getElementById('btn-show-nip').addEventListener('click', () => {
+      hideLockLayers();
+      nipOverlay.hidden = false;
+      refreshLock();
+    });
+    document.getElementById('btn-show-password').addEventListener('click', () => {
+      hideLockLayers();
+      mysteryLayer.hidden = false;
+      refreshLock();
+    });
+    document.getElementById('btn-cover').addEventListener('click', () => {
+      hideLockLayers();
+      fullCover.hidden = false;
+      refreshLock();
+    });
+    document.getElementById('btn-clear-login').addEventListener('click', () => {
+      hideLockLayers();
+      loginEl.hidden = false;
+      loginEl.textContent = '';
+      refreshLock();
+    });
+    document.getElementById('btn-hide-login').addEventListener('click', () => {
+      hideLockLayers();
+      loginEl.hidden = true;
+      loginEl.textContent = 'DEMO';
+      refreshLock();
+    });
+    document.getElementById('btn-unlock').addEventListener('click', () => {
+      hideLockLayers();
+      loginEl.hidden = false;
+      loginEl.textContent = 'DEMO';
+      refreshLock();
+    });
+
+    refreshLock();
   </script>
 </body>
 </html>

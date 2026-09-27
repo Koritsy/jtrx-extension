@@ -24,7 +24,7 @@
   "content_scripts": [
     {
       "matches": ["https://4502812786.priorx.ca/*"],
-      "js": ["priorx-search.js", "content.js"],
+      "js": ["priorx-search.js", "priorx-lock.js", "content.js"],
       "run_at": "document_idle"
     }
   ],

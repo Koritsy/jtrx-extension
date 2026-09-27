@@ -19,6 +19,8 @@
     zIndex: '2147483647',
   });
   document.body.appendChild(host);
+  // Stay hidden until the Priorx session is confirmed open. Fail closed.
+  host.hidden = true;
 
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
@@ -408,8 +410,144 @@
   const EMPTY_CONFIRMATIONS = 'Aucune réponse en attente';
   const TOAST_COPIED = 'Numéro copié — collez-le dans la recherche (F3)';
 
+  // ── Priorx lock / no signed-in user ─────────────────────────────────────────
+  // The widget stays hidden until LoginName1 is visible and no NIP screen is up.
+  // Every send checks again. If the check cannot tell, it blocks.
+
+  const Lock = globalThis.NotiRxLock;
+  let widgetLocked = true;
+  let priorxWasLocked = false;
+  let idleExpired = false;
+  let lastActivityAt = Date.now();
+  let idleMinutes = Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 10;
+  let lockDebug = false;
+
+  function currentAssessment() {
+    if (!Lock) {
+      return {
+        locked: true,
+        reasons: ['lock-helper-missing'],
+        debug: { locked: true, reasons: ['lock-helper-missing'], idleExpired },
+      };
+    }
+    return Lock.assessPriorxSession(document, { idleExpired });
+  }
+
+  function logLock(assessment) {
+    console.info('[NotiRx lock]', assessment.debug);
+    try {
+      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(assessment.debug));
+    } catch {
+      // The page can refuse the attribute. The console line is enough.
+    }
+  }
+
+  function clearSensitiveUi() {
+    $('conf-list').replaceChildren();
+    $('hist-list').replaceChildren();
+    $('conf-badge').classList.add('hidden');
+    $('conf-badge').textContent = '0';
+    for (const id of ['up-name', 'oi-name', 'oo-name', 'oi-confirm-text']) {
+      const el = $(id);
+      if (el) el.textContent = id === 'oi-confirm-text' ? '' : '';
+    }
+    const confEmpty = $('conf-empty');
+    const histEmpty = $('hist-empty');
+    if (confEmpty) confEmpty.textContent = '';
+    if (histEmpty) histEmpty.textContent = '';
+  }
+
+  function enterLocked() {
+    widgetLocked = true;
+    host.hidden = true;
+    panelOpen = false;
+    panel.classList.remove('open');
+    clearSensitiveUi();
+    currentPatient = null;
+    chrome.runtime.sendMessage({ type: 'PATIENT_CLEARED' });
+  }
+
+  function leaveLocked() {
+    widgetLocked = false;
+    host.hidden = false;
+    lastActivityAt = Date.now();
+    idleExpired = false;
+    onPatientChanged();
+    fetchConfirmations();
+  }
+
+  function enforceLock() {
+    const priorx = Lock
+      ? Lock.assessPriorxSession(document, { idleExpired: false })
+      : { locked: true, reasons: ['lock-helper-missing'], debug: { locked: true, reasons: ['lock-helper-missing'] } };
+    if (priorx.locked) {
+      priorxWasLocked = true;
+    } else if (priorxWasLocked) {
+      priorxWasLocked = false;
+      idleExpired = false;
+      lastActivityAt = Date.now();
+    }
+    const assessment = currentAssessment();
+    if (lockDebug) logLock(assessment);
+    const locked = assessment.locked;
+    if (locked && !widgetLocked) enterLocked();
+    if (!locked && widgetLocked) leaveLocked();
+    widgetLocked = locked;
+    if (locked) host.hidden = true;
+    return assessment;
+  }
+
+  function sessionAllowsAction() {
+    const assessment = currentAssessment();
+    if (assessment.locked) {
+      idleExpired = assessment.reasons.includes('idle') || idleExpired;
+      if (assessment.reasons.some((reason) => reason !== 'idle')) priorxWasLocked = true;
+      if (!widgetLocked) enterLocked();
+      else host.hidden = true;
+      widgetLocked = true;
+      if (lockDebug) logLock(assessment);
+      return false;
+    }
+    return true;
+  }
+
+  let lastAssessAt = 0;
+
+  function noteActivity(event) {
+    const now = Date.now();
+    const cheap = event.type === 'mousemove' || event.type === 'scroll';
+    if (!widgetLocked && !idleExpired) {
+      lastActivityAt = now;
+      return;
+    }
+    if (cheap && now - lastAssessAt < 1000) return;
+    lastAssessAt = now;
+    const priorx = Lock
+      ? Lock.assessPriorxSession(document, { idleExpired: false })
+      : { locked: true };
+    if (priorx.locked) {
+      priorxWasLocked = true;
+      enforceLock();
+      return;
+    }
+    const unlocking = event.type === 'click' || event.type === 'keydown' || event.type === 'pointerdown';
+    if (idleExpired && !unlocking) return;
+    if (idleExpired && unlocking) idleExpired = false;
+    lastActivityAt = now;
+    if (widgetLocked) enforceLock();
+  }
+
+  document.addEventListener('notirx-lock-debug', () => {
+    logLock(currentAssessment());
+  });
+
   function fetchConfirmations() {
-    chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST' }, response => {
+    if (currentAssessment().locked) {
+      $('conf-list').replaceChildren();
+      $('conf-badge').classList.add('hidden');
+      return;
+    }
+    chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST', priorxUnlocked: true }, response => {
       if (!response?.ok) {
         $('conf-list').replaceChildren();
         $('conf-badge').classList.add('hidden');
@@ -423,6 +561,10 @@
   }
 
   function renderConfirmations(items) {
+    if (currentAssessment().locked) {
+      clearSensitiveUi();
+      return;
+    }
     const badge = $('conf-badge');
     badge.textContent = String(items.length);
     badge.classList.toggle('hidden', items.length === 0);
@@ -488,6 +630,7 @@
   }
 
   async function searchByPhone(digits) {
+    if (!sessionAllowsAction()) return;
     if (!Search) {
       showToast('Impossible de placer le numéro. Appuyez sur F3, puis collez-le.');
       return;
@@ -506,7 +649,8 @@
   }
 
   function dismissConfirmation(confirmationId) {
-    chrome.runtime.sendMessage({ type: 'CONFIRMATION_DISMISS', confirmationId }, response => {
+    if (!sessionAllowsAction()) return;
+    chrome.runtime.sendMessage({ type: 'CONFIRMATION_DISMISS', confirmationId, priorxUnlocked: true }, response => {
       if (response?.ok) fetchConfirmations();
       else showToast('Impossible de marquer cette réponse comme terminée.');
     });
@@ -517,6 +661,11 @@
   let historyRequest = 0;
 
   function fetchHistory(phoneRaw) {
+    if (currentAssessment().locked) {
+      $('hist-list').replaceChildren();
+      $('hist-empty').textContent = '';
+      return;
+    }
     const requestId = ++historyRequest;
     const digits = Search ? Search.phoneDigits(phoneRaw) : String(phoneRaw || '').replace(/\D/g, '');
     const empty = $('hist-empty');
@@ -536,13 +685,17 @@
 
     empty.textContent = 'Chargement…';
     empty.classList.remove('hidden');
-    chrome.runtime.sendMessage({ type: 'MESSAGES_HISTORY', phoneNumber: digits }, response => {
+    chrome.runtime.sendMessage({ type: 'MESSAGES_HISTORY', phoneNumber: digits, priorxUnlocked: true }, response => {
       if (requestId !== historyRequest) return;
       renderHistory(response);
     });
   }
 
   function renderHistory(response) {
+    if (currentAssessment().locked) {
+      clearSensitiveUi();
+      return;
+    }
     const empty = $('hist-empty');
     const listEl = $('hist-list');
     listEl.replaceChildren();
@@ -582,7 +735,10 @@
     });
   }
 
-  fetchConfirmations();
+  setInterval(() => {
+    if (Date.now() - lastActivityAt >= idleMinutes * 60 * 1000) idleExpired = true;
+    enforceLock();
+  }, 5000);
   setInterval(fetchConfirmations, 20000);
 
   // ── Messages from background ───────────────────────────────────────────────
@@ -591,10 +747,15 @@
     switch (msg.type) {
 
       case 'STATE_UPDATE':
+        if (currentAssessment().locked) {
+          if (!widgetLocked) enforceLock();
+          break;
+        }
         applyState(msg);
         break;
 
       case 'NOTIFY_SUCCESS':
+        if (!sessionAllowsAction()) break;
         $('oi-area').classList.add('hidden');
         $('oi-confirm').classList.add('hidden');
         $('oi-success').classList.remove('hidden');
@@ -605,7 +766,9 @@
       case 'NOTIFY_ERROR':
         resetNotify();
         if (msg.consentRevoked) {
-          chrome.runtime.sendMessage({ type: 'RETRY_PATIENT', patient: currentPatient });
+          if (sessionAllowsAction()) {
+            chrome.runtime.sendMessage({ type: 'RETRY_PATIENT', patient: currentPatient, priorxUnlocked: true });
+          }
         } else {
           $('err-msg').textContent = msg.error || '';
           showView('error');
@@ -621,6 +784,7 @@
   });
 
   function applyState(msg) {
+    if (currentAssessment().locked) return;
     $('oi-reinscription').classList.add('hidden');
     const p = msg.patient;
 
@@ -671,7 +835,13 @@
   });
 
   $('btn-send-yes').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'NOTIFY_SEND', patient: currentPatient, messageType: pendingNotifyType });
+    if (!sessionAllowsAction()) return;
+    chrome.runtime.sendMessage({
+      type: 'NOTIFY_SEND',
+      patient: currentPatient,
+      messageType: pendingNotifyType,
+      priorxUnlocked: true,
+    });
   });
 
   $('btn-send-no').addEventListener('click', resetNotify);
@@ -701,9 +871,11 @@
   });
 
   function saveConsent(consent) {
+    if (!sessionAllowsAction()) return;
     showView('loading'); setDot('');
     chrome.runtime.sendMessage({
       type: 'CONSENT_SAVE',
+      priorxUnlocked: true,
       data: { consent, recordedBy: currentPatient?.user || 'unknown', patient: currentPatient },
     }, response => {
       if (!response?.ok) {
@@ -727,6 +899,10 @@
   }
 
   function onPatientChanged() {
+    if (currentAssessment().locked) {
+      if (!widgetLocked) enforceLock();
+      return;
+    }
     const patient = readPatientFromDOM();
     if (!patient.lastName && !patient.firstName) {
       currentPatient = null;
@@ -741,7 +917,7 @@
       currentPatient.phoneRaw === patient.phoneRaw
     ) return;
     currentPatient = patient;
-    chrome.runtime.sendMessage({ type: 'PATIENT_CHANGED', data: patient });
+    chrome.runtime.sendMessage({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
     fetchHistory(patient.phoneRaw);
   }
 
@@ -756,5 +932,33 @@
     new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
       .observe(info2Target, { childList: true, subtree: true, characterData: true });
   }
+
+  for (const eventName of ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown']) {
+    document.addEventListener(eventName, noteActivity, true);
+  }
+
+  let lockTimer = 0;
+  new MutationObserver(() => {
+    clearTimeout(lockTimer);
+    lockTimer = setTimeout(enforceLock, 50);
+  }).observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['style', 'class', 'hidden', 'aria-hidden', 'aria-modal'],
+    characterData: true,
+  });
+
+  chrome.storage.local.get(['idleLockMinutes', 'lockDebug'], (data) => {
+    if (Lock) idleMinutes = Lock.normalizeIdleLockMinutes(data?.idleLockMinutes);
+    lockDebug = Boolean(data?.lockDebug);
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !Lock) return;
+    if (changes.idleLockMinutes) idleMinutes = Lock.normalizeIdleLockMinutes(changes.idleLockMinutes.newValue);
+    if (changes.lockDebug) lockDebug = Boolean(changes.lockDebug.newValue);
+  });
+
+  enforceLock();
 
 })();

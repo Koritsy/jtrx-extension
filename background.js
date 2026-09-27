@@ -66,6 +66,12 @@ async function apiRequest(method, path, body = null) {
   return JSON.parse(text);
 }
 
+function rejectIfLocked(msg, sendResponse) {
+  if (msg?.priorxUnlocked === true) return false;
+  sendResponse({ ok: false, error: 'Priorx est verrouillé.' });
+  return true;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id ?? activeTabId;
 
@@ -73,6 +79,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'PATIENT_CHANGED':
       activeTabId = sender.tab?.id ?? activeTabId;
+      if (msg.priorxUnlocked !== true) {
+        delete tabState[tabId];
+        broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
+        break;
+      }
       handlePatientChanged(tabId, msg.data);
       break;
 
@@ -82,26 +93,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
 
     case 'CONSENT_SAVE':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleConsentSave(tabId, msg.data, sendResponse);
       return true;
 
     case 'NOTIFY_SEND':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleNotifySend(tabId, sendResponse, msg.patient, msg.messageType);
       return true;
 
     case 'CONFIRMATIONS_LIST':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleConfirmationsList(sendResponse);
       return true;
 
     case 'CONFIRMATION_DISMISS':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleConfirmationDismiss(msg.confirmationId, sendResponse);
       return true;
 
     case 'MESSAGES_HISTORY':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleMessagesHistory(msg.phoneNumber, sendResponse);
       return true;
 
     case 'RETRY_PATIENT': {
+      if (msg.priorxUnlocked !== true) {
+        broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
+        break;
+      }
       const patient = tabState[tabId]?.patient ?? msg.patient;
       if (patient) {
         handlePatientChanged(tabId, patient);
