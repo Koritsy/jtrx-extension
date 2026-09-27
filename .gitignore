@@ -1,4 +1,7 @@
-# Never commit pharmacy credentials
+# Legacy workstation file from before the Options page.
+# The API key now lives in the browser profile. If config.js is still on a
+# pharmacy computer, delete it after saving the key in NotiRx options.
+# Never commit it.
 config.js
 
 # Build artifacts

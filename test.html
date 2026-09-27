@@ -26,8 +26,9 @@
 
   <h2>NotiRx — Page de test</h2>
   <p>
-    Clique <strong>Charger patient</strong>, puis ouvre le panneau latéral
-    en cliquant sur l'icône NotiRx dans la barre d'outils de ton navigateur.
+    Données fictives. Le widget n’apparaît que si cette page est servie depuis
+    l’adresse Priorx indiquée dans manifest.json, sur une URL qui contient index.aspx.
+    Clique <strong>Charger un patient fictif</strong>, puis l’onglet bleu <strong>Rx</strong>.
   </p>
 
   <!-- Visible preview -->
@@ -36,7 +37,7 @@
     <div class="card-info" id="preview-info"></div>
   </div>
 
-  <button class="load"  onclick="load()">Charger patient (toi)</button>
+  <button class="load"  onclick="load()">Charger un patient fictif</button>
   <button class="clear" onclick="clear()">✕ Effacer le patient</button>
 
   <!-- Hidden Priorx DOM read by content.js -->
@@ -44,7 +45,7 @@
     <div id="BA01_LastName"></div>
     <div id="BA01_FirstName"></div>
     <div id="BA01_Info2"></div>
-    <div id="LoginName1">jositr</div>
+    <div id="LoginName1">DEMO</div>
   </div>
 
   <script>
@@ -55,13 +56,13 @@
     }
 
     function load() {
-      setText('BA01_FirstName', ', Josianne');
-      setText('BA01_Info2', '438.524.6123 - 168 rue Louise-Bernard, Beloeil');
+      setText('BA01_FirstName', ', Alex');
+      setText('BA01_Info2', '555-010-0199 - 100 rue Fictive, Ville-Test');
       // Fire lastName last — content.js watches this one
       setTimeout(() => {
-        setText('BA01_LastName', 'Tremblay');
-        document.getElementById('preview-name').textContent = 'TREMBLAY, Josianne';
-        document.getElementById('preview-info').textContent = '438.524.6123 — 168 rue Louise-Bernard, Beloeil';
+        setText('BA01_LastName', 'Exemple');
+        document.getElementById('preview-name').textContent = 'EXEMPLE, Alex';
+        document.getElementById('preview-info').textContent = '555-010-0199 — 100 rue Fictive, Ville-Test';
       }, 50);
     }
 

@@ -1,4 +1,5 @@
-// NotiRx content script — reads Priorx DOM + renders floating widget via Shadow DOM.
+// NotiRx content script — reads a few Priorx fields and draws the widget.
+// Page network traffic is left untouched.
 
 (function () {
   if (!document.getElementById('BA01_LastName')) return;
@@ -251,6 +252,7 @@
         <div id="v-error" class="view">
           <div class="muted">⚠️ <span id="err-msg"></span></div>
           <button id="btn-retry" class="btn btn-ghost">Réessayer</button>
+          <button id="btn-options" class="btn btn-ghost">Options</button>
         </div>
 
         </div><!-- /#patient-views -->
@@ -356,37 +358,56 @@
 
   // ── Confirmations (renewal OUI replies) ──────────────────────────────────────
 
+  const EMPTY_CONFIRMATIONS = 'Aucune confirmation en attente';
+
   function fetchConfirmations() {
     chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST' }, response => {
-      if (!response?.ok) return;
+      if (!response?.ok) {
+        $('conf-list').replaceChildren();
+        $('conf-badge').classList.add('hidden');
+        const empty = $('conf-empty');
+        empty.textContent = response?.error || 'Impossible de charger les confirmations.';
+        empty.classList.remove('hidden');
+        return;
+      }
       renderConfirmations(response.confirmations || []);
     });
   }
 
   function renderConfirmations(items) {
     const badge = $('conf-badge');
-    badge.textContent = items.length;
+    badge.textContent = String(items.length);
     badge.classList.toggle('hidden', items.length === 0);
 
-    $('conf-empty').classList.toggle('hidden', items.length > 0);
+    const empty = $('conf-empty');
+    empty.textContent = EMPTY_CONFIRMATIONS;
+    empty.classList.toggle('hidden', items.length > 0);
+
     const listEl = $('conf-list');
-    listEl.innerHTML = '';
+    listEl.replaceChildren();
 
     items.forEach(item => {
-      const div = document.createElement('div');
-      div.className = 'conf-item';
-      div.innerHTML = `
-        <div>
-          <div class="conf-name">${escapeHtml(item.patient_name || 'Numéro inconnu')}</div>
-          <div class="conf-time">${formatConfTime(item.replied_at)}</div>
-        </div>
-        <button class="btn-done" data-confirmation-id="${item.confirmation_id}">✓ Fait</button>
-      `;
-      listEl.appendChild(div);
-    });
+      const row = document.createElement('div');
+      row.className = 'conf-item';
 
-    listEl.querySelectorAll('.btn-done').forEach(btn => {
-      btn.addEventListener('click', () => dismissConfirmation(btn.dataset.confirmationId));
+      const text = document.createElement('div');
+      const name = document.createElement('div');
+      name.className = 'conf-name';
+      name.textContent = item.patient_name || 'Numéro inconnu';
+      const time = document.createElement('div');
+      time.className = 'conf-time';
+      time.textContent = formatConfTime(item.replied_at);
+      text.append(name, time);
+
+      const done = document.createElement('button');
+      done.type = 'button';
+      done.className = 'btn-done';
+      done.textContent = '✓ Fait';
+      const confirmationId = item.confirmation_id == null ? '' : String(item.confirmation_id);
+      done.addEventListener('click', () => dismissConfirmation(confirmationId));
+
+      row.append(text, done);
+      listEl.appendChild(row);
     });
   }
 
@@ -405,12 +426,6 @@
     }
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
   fetchConfirmations();
   setInterval(fetchConfirmations, 20000);
 
@@ -421,17 +436,6 @@
 
       case 'STATE_UPDATE':
         applyState(msg);
-        break;
-
-      case 'VALIDATION_PROMPT':
-        panelOpen = true;
-        panel.classList.add('open');
-        resetNotify();
-        showView('opted-in');
-        pendingNotifyType = 'ready';
-        $('oi-confirm-text').textContent = NOTIFY_LABELS.ready;
-        $('oi-area').classList.add('hidden');
-        $('oi-confirm').classList.remove('hidden');
         break;
 
       case 'NOTIFY_SUCCESS':
@@ -535,6 +539,10 @@
     chrome.runtime.sendMessage({ type: 'RETRY_PATIENT' });
   });
 
+  $('btn-options').addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
+  });
+
   function saveConsent(consent) {
     showView('loading'); setDot('');
     chrome.runtime.sendMessage({
@@ -587,43 +595,6 @@
   if (info2Target) {
     new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
       .observe(info2Target, { childList: true, subtree: true, characterData: true });
-  }
-
-  // ── Prescription validation detection ─────────────────────────────────────
-
-  const VALIDATION_URL_PATTERN = /index\.aspx/i;
-  const VALIDATION_SUCCESS_KEY = '__VALIDATION_SUCCESS__';
-
-  const OriginalXHR = window.XMLHttpRequest;
-  function InterceptedXHR() {
-    const xhr = new OriginalXHR();
-    let requestUrl = '';
-    const origOpen = xhr.open.bind(xhr);
-    xhr.open = function (method, url, ...rest) {
-      requestUrl = url;
-      return origOpen(method, url, ...rest);
-    };
-    xhr.addEventListener('load', function () {
-      if (!VALIDATION_URL_PATTERN.test(requestUrl)) return;
-      try {
-        if ((xhr.responseText || '').includes(VALIDATION_SUCCESS_KEY)) {
-          chrome.runtime.sendMessage({ type: 'PRESCRIPTION_VALIDATED' });
-        }
-      } catch (_) {}
-    });
-    return xhr;
-  }
-  InterceptedXHR.prototype = OriginalXHR.prototype;
-  window.XMLHttpRequest = InterceptedXHR;
-
-  const origDoPostBack = window.__doPostBack;
-  if (typeof origDoPostBack === 'function') {
-    window.__doPostBack = function (eventTarget, eventArgument) {
-      if (eventTarget && eventTarget.includes('TODO_VALIDATION_TARGET')) {
-        chrome.runtime.sendMessage({ type: 'PRESCRIPTION_VALIDATED' });
-      }
-      return origDoPostBack.call(this, eventTarget, eventArgument);
-    };
   }
 
 })();
