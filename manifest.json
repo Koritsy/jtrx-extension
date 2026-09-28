@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
   "name": "NotiRx — Companion Pharmacie",
-  "version": "1.0.0",
-  "description": "Système de notifications SMS pour les ordonnances prêtes — JT Automatisation",
+  "version": "1.2.0",
+  "minimum_chrome_version": "109",
+  "incognito": "not_allowed",
+  "description": "Envoie un SMS au patient depuis Priorx : commande prête, médicament manquant, nouvelle ordonnance, renouvellement.",
 
   "permissions": [
-    "storage",
-    "alarms"
+    "storage"
   ],
+  "storage": {
+    "managed_schema": "managed_schema.json"
+  },
   "host_permissions": [
-    "*://*/*index.aspx*"
+    "https://4502812786.priorx.ca/*"
   ],
 
   "background": {
@@ -19,11 +23,16 @@
 
   "content_scripts": [
     {
-      "matches": ["*://*/*index.aspx*"],
+      "matches": ["https://4502812786.priorx.ca/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
+
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
 
   "action": {
     "default_title": "NotiRx",

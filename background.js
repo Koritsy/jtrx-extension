@@ -1,38 +1,65 @@
-// NotiRx background service worker — relays messages, calls AWS API.
+// NotiRx background service worker — relays widget messages to the API.
 
-import { CONFIG } from './config.js';
+import {
+  assertSafeRequest,
+  confirmationDismiss,
+  confirmationsList,
+  consentLookup,
+  consentSave,
+  notifySend,
+} from './api-contract.mjs';
+import { pickRuntimeConfig } from './runtime-config.mjs';
 
-// ── State ──────────────────────────────────────────────────────────────────
-
-// Keyed by tabId — stores the current patient + their consent state per tab
+// Keyed by tabId — current patient and consent for that Priorx tab.
 const tabState = {};
 
-// Last tab where a patient was detected — side panel messages have no tab, so we fall back to this
+// Content-script messages include sender.tab.id. The toolbar icon does too.
 let activeTabId = null;
 
-// ── API helpers ────────────────────────────────────────────────────────────
+async function readStorageArea(area) {
+  try {
+    return await area.get(['apiBaseUrl', 'apiKey']);
+  } catch {
+    return {};
+  }
+}
+
+async function getConfig() {
+  const [managed, local] = await Promise.all([
+    readStorageArea(chrome.storage.managed),
+    readStorageArea(chrome.storage.local),
+  ]);
+  const picked = pickRuntimeConfig(managed, local);
+  if (!picked.ok && picked.source === 'managed') {
+    throw new Error('La configuration fournie par l’administrateur est incomplète ou invalide.');
+  }
+  if (!picked.ok) {
+    throw new Error('Configuration manquante. Ouvrez les options de NotiRx.');
+  }
+  return picked;
+}
 
 async function apiRequest(method, path, body = null) {
+  assertSafeRequest(method, path);
+  const { apiBaseUrl, apiKey } = await getConfig();
   const opts = {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'X-Api-Key': CONFIG.API_KEY,
-      'X-Pharmacy-Id': CONFIG.PHARMACY_ID,
-      'X-Pharmacy-Name': CONFIG.PHARMACY_NAME,
+      'X-Api-Key': apiKey,
     },
+    credentials: 'omit',
+    referrerPolicy: 'no-referrer',
+    cache: 'no-store',
   };
   if (body) opts.body = JSON.stringify(body);
 
-  const res = await fetch(`${CONFIG.API_BASE_URL}${path}`, opts);
+  const res = await fetch(`${apiBaseUrl}${path}`, opts);
   if (!res.ok) throw new Error(`API ${method} ${path} → ${res.status}`);
   return res.json();
 }
 
-// ── Message router ─────────────────────────────────────────────────────────
-
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // Content script messages have sender.tab.id; side panel messages do not — fall back to activeTabId
   const tabId = sender.tab?.id ?? activeTabId;
 
   switch (msg.type) {
@@ -47,25 +74,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
       break;
 
-    case 'PRESCRIPTION_VALIDATED':
-      handleValidationDetected(tabId);
-      break;
-
     case 'CONSENT_SAVE':
       handleConsentSave(tabId, msg.data, sendResponse);
-      return true; // async
+      return true;
 
     case 'NOTIFY_SEND':
       handleNotifySend(tabId, sendResponse, msg.patient, msg.messageType);
-      return true; // async
+      return true;
 
     case 'CONFIRMATIONS_LIST':
       handleConfirmationsList(sendResponse);
-      return true; // async
+      return true;
 
     case 'CONFIRMATION_DISMISS':
       handleConfirmationDismiss(msg.confirmationId, sendResponse);
-      return true; // async
+      return true;
 
     case 'RETRY_PATIENT': {
       const patient = tabState[tabId]?.patient ?? msg.patient;
@@ -77,12 +100,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     }
 
+    case 'OPEN_OPTIONS':
+      chrome.runtime.openOptionsPage();
+      break;
+
     default:
       break;
   }
 });
-
-// ── Handlers ──────────────────────────────────────────────────────────────
 
 async function handlePatientChanged(tabId, patient) {
   tabState[tabId] = { patient, consent: null };
@@ -95,7 +120,8 @@ async function handlePatientChanged(tabId, patient) {
   }
 
   try {
-    const result = await apiRequest('GET', `/consent/${patient.phoneRaw}`);
+    const req = consentLookup(patient.phoneRaw);
+    const result = await apiRequest(req.method, req.path, req.body);
     const consent = result.consent;
     tabState[tabId].consent = consent;
 
@@ -103,32 +129,25 @@ async function handlePatientChanged(tabId, patient) {
       type: 'STATE_UPDATE',
       state: consentToState(consent),
       patient,
-      consentDate:          result.consent_date || null,
-      needsReinscription:   result.needs_reinscription || false,
+      consentDate: result.consent_date || null,
+      needsReinscription: result.needs_reinscription || false,
     });
   } catch (err) {
     broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'ERROR', error: err.message });
   }
 }
 
-async function handleValidationDetected(tabId) {
-  const state = tabState[tabId];
-  if (!state || state.consent !== 'yes') return;
-
-  broadcastToPanel(tabId, { type: 'VALIDATION_PROMPT', patient: state.patient });
-}
-
 async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatient }, sendResponse) {
-  // Prefer tabState (in-memory), fall back to patient sent in the message
   const patient = tabState[tabId]?.patient ?? msgPatient;
   if (!patient) return sendResponse({ ok: false, error: 'No patient' });
 
   try {
-    await apiRequest('POST', '/consent', {
-      phone_number: patient.phoneRaw,
+    const req = consentSave({
+      phoneNumber: patient.phoneRaw,
       consent,
-      recorded_by:  recordedBy,
+      recordedBy,
     });
+    await apiRequest(req.method, req.path, req.body);
     if (tabState[tabId]) tabState[tabId].consent = consent;
     broadcastToPanel(tabId, {
       type: 'STATE_UPDATE',
@@ -146,11 +165,12 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
   if (!patient) return sendResponse({ ok: false, error: 'No patient' });
 
   try {
-    const result = await apiRequest('POST', '/notify', {
-      phone_number: patient.phoneRaw,
-      patient_name: patient.firstName,
-      message_type: messageType || 'ready',
+    const req = notifySend({
+      phoneNumber: patient.phoneRaw,
+      patientName: patient.firstName,
+      messageType,
     });
+    const result = await apiRequest(req.method, req.path, req.body);
     broadcastToPanel(tabId, { type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
     sendResponse({ ok: true });
   } catch (err) {
@@ -163,8 +183,10 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
 
 async function handleConfirmationsList(sendResponse) {
   try {
-    const result = await apiRequest('GET', '/confirmations');
-    sendResponse({ ok: true, confirmations: result.confirmations || [] });
+    const req = confirmationsList();
+    const result = await apiRequest(req.method, req.path, req.body);
+    const confirmations = Array.isArray(result.confirmations) ? result.confirmations : [];
+    sendResponse({ ok: true, confirmations });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
   }
@@ -172,18 +194,17 @@ async function handleConfirmationsList(sendResponse) {
 
 async function handleConfirmationDismiss(confirmationId, sendResponse) {
   try {
-    await apiRequest('POST', `/confirmations/${encodeURIComponent(confirmationId)}/dismiss`);
+    const req = confirmationDismiss(confirmationId);
+    await apiRequest(req.method, req.path, req.body);
     sendResponse({ ok: true });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
   }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
 function consentToState(consent) {
   if (consent === 'yes') return 'OPTED_IN';
-  if (consent === 'no')  return 'OPTED_OUT';
+  if (consent === 'no') return 'OPTED_OUT';
   return 'UNKNOWN';
 }
 
@@ -192,7 +213,14 @@ function broadcastToPanel(tabId, message) {
   chrome.tabs.sendMessage(tabId, message).catch(() => {});
 }
 
-// Toggle widget when extension icon is clicked
 chrome.action.onClicked.addListener((tab) => {
   chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_WIDGET' }).catch(() => {});
+});
+
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    await getConfig();
+  } catch {
+    chrome.runtime.openOptionsPage();
+  }
 });
