@@ -81,10 +81,26 @@
       required
     />
 
+    <label for="idle-minutes">Verrouiller après inactivité (minutes)</label>
+    <input id="idle-minutes" name="idle-minutes" type="number" min="1" max="120" step="1" inputmode="numeric" />
+    <p>
+      Le widget se ferme si personne n’utilise la page Priorx pendant ce délai.
+      5 minutes est la valeur de départ. Le délai du NIP dans Priorx change d’une pharmacie à l’autre. Mettez le même nombre que cette pharmacie.
+    </p>
+
+    <details>
+      <summary>Diagnostic du verrouillage</summary>
+      <label>
+        <input id="lock-debug" type="checkbox" />
+        Écrire dans la console ce que NotiRx voit du verrouillage. Aucun numéro de téléphone n’est écrit.
+      </label>
+    </details>
+
     <button type="submit">Enregistrer</button>
   </form>
   <p id="status" role="status"></p>
 
+  <script src="priorx-lock.js"></script>
   <script type="module" src="options.js"></script>
 </body>
 </html>

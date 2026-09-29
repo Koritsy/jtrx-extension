@@ -11,24 +11,34 @@
 //
 //   POST /consent/lookup                          { phone_number }
 //   POST /consent                                 { phone_number, consent, recorded_by }
-//   POST /notify                                  { phone_number, patient_name, message_type }
+//   POST /notify                                  { phone_number, patient_name, message_type, sent_by?, language }
 //   GET  /confirmations
 //   POST /confirmations/{confirmation_id}/dismiss
+//   POST /messages/history                        { phone_number }
 //
 // message_type is ready | partial | new_prescription | renewal.
 // patient_name is the patient's first name.
+// sent_by is the staff login from LoginName1. It is omitted when that field is empty.
+// language is EN or FR. EN only when the patient file says EN, ENG, ANGLAIS, or ENGLISH.
+// Anything else, including a missing field, is FR. An older server ignores language and sends French.
 // confirmation_id is the id returned by GET /confirmations, not a phone number.
 //
-// Responses this extension still reads (unchanged by this file):
+// Responses this extension reads:
 //   lookup:        consent, consent_date, needs_reinscription
 //   notify:        message_sid
-//   confirmations: confirmations[].confirmation_id, patient_name, replied_at
+//   confirmations: confirmations[].confirmation_id, patient_name, replied_at,
+//                  phone_number (10 digits, may be missing on an older server),
+//                  message_type (may be null)
+//   history:       messages[].message_type, sent_at (ISO UTC), sent_by|null,
+//                  status|null, direction? ("out"|"in"), reply_keyword?
+//                  Older servers answer 404. The widget shows a French notice.
 
 const STATIC_REQUESTS = new Set([
   'POST /consent/lookup',
   'POST /consent',
   'POST /notify',
   'GET /confirmations',
+  'POST /messages/history',
 ]);
 
 export function consentLookup(phoneNumber) {
@@ -51,15 +61,28 @@ export function consentSave({ phoneNumber, consent, recordedBy }) {
   };
 }
 
-export function notifySend({ phoneNumber, patientName, messageType }) {
+export function notifySend({ phoneNumber, patientName, messageType, sentBy, language }) {
+  const body = {
+    phone_number: phoneNumber,
+    patient_name: patientName,
+    message_type: messageType || 'ready',
+    language: language === 'EN' ? 'EN' : 'FR',
+  };
+  if (typeof sentBy === 'string' && sentBy.trim()) {
+    body.sent_by = sentBy.trim();
+  }
   return {
     method: 'POST',
     path: '/notify',
-    body: {
-      phone_number: phoneNumber,
-      patient_name: patientName,
-      message_type: messageType || 'ready',
-    },
+    body,
+  };
+}
+
+export function messagesHistory(phoneNumber) {
+  return {
+    method: 'POST',
+    path: '/messages/history',
+    body: { phone_number: phoneNumber },
   };
 }
 

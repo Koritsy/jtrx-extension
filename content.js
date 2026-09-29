@@ -19,6 +19,8 @@
     zIndex: '2147483647',
   });
   document.body.appendChild(host);
+  // Stay hidden until the Priorx session is confirmed open. Fail closed.
+  host.hidden = true;
 
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
@@ -29,7 +31,7 @@
       #root { display: flex; align-items: flex-start; }
 
       #panel {
-        width: 170px;
+        width: 260px;
         background: #fff;
         border: 1px solid #ddd;
         border-right: none;
@@ -75,10 +77,20 @@
       .view { display: none; padding: 9px; }
       .view.active { display: block; }
 
+      .name-row {
+        display: flex; align-items: center; gap: 6px;
+        margin-bottom: 5px;
+      }
       .name {
         font-weight: 600; font-size: 12px;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        margin-bottom: 5px;
+        flex: 1; min-width: 0;
+      }
+      .lang-badge {
+        flex-shrink: 0;
+        font-size: 10px; font-weight: 700; letter-spacing: .4px;
+        padding: 1px 5px; border-radius: 4px;
+        background: #e3f2fd; color: #1565c0;
       }
       .badge {
         display: inline-block; padding: 2px 6px;
@@ -155,6 +167,7 @@
         align-items: center;
         justify-content: center;
         gap: 4px;
+        white-space: nowrap;
       }
       .nav-btn.active { color: #1565c0; border-bottom-color: #1565c0; }
       .conf-badge {
@@ -167,12 +180,30 @@
         border-radius: 6px; padding: 6px; margin-bottom: 5px;
         display: flex; justify-content: space-between; align-items: center; gap: 6px;
       }
+      .conf-item.clickable:hover { background: #e3f2fd; border-color: #bbdefb; }
+      .conf-open {
+        flex: 1; min-width: 0;
+        background: none; border: none; padding: 0;
+        text-align: left; font: inherit; color: inherit;
+      }
+      .conf-item.clickable .conf-open { cursor: pointer; }
+      .conf-open-static { cursor: default; }
       .conf-name { font-weight: 600; font-size: 11px; }
+      .conf-type { color: #1565c0; font-size: 10px; margin-top: 1px; line-height: 1.3; }
       .conf-time { color: #9e9e9e; font-size: 9px; margin-top: 1px; }
+      #conf-list, #hist-list { max-height: 320px; overflow: auto; }
       .btn-done {
         background: #e8f5e9; color: #2e7d32; border: none;
         border-radius: 5px; padding: 4px 6px; font-size: 10px; font-weight: 600;
         cursor: pointer; white-space: nowrap;
+      }
+      .toast {
+        position: fixed; right: 12px; bottom: 12px;
+        max-width: 240px;
+        background: #1a237e; color: #fff;
+        border-radius: 8px; padding: 8px 10px;
+        font-size: 12px; line-height: 1.35;
+        box-shadow: 0 2px 10px rgba(0,0,0,.22);
       }
     </style>
 
@@ -181,9 +212,10 @@
 
         <div id="nav-row">
           <button id="nav-patient" class="nav-btn active">Patient</button>
-          <button id="nav-confirmations" class="nav-btn">
-            Confirm. <span id="conf-badge" class="conf-badge hidden">0</span>
+          <button id="nav-responses" class="nav-btn">
+            Réponses <span id="conf-badge" class="conf-badge hidden">0</span>
           </button>
+          <button id="nav-history" class="nav-btn">Historique</button>
         </div>
 
         <div id="patient-views">
@@ -201,7 +233,10 @@
         </div>
 
         <div id="v-unknown" class="view">
-          <div id="up-name" class="name"></div>
+          <div class="name-row">
+            <div id="up-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <span class="badge unk">Consentement inconnu</span>
           <div class="muted">Demandez si le patient souhaite recevoir un SMS.</div>
           <div class="row">
@@ -211,7 +246,10 @@
         </div>
 
         <div id="v-opted-in" class="view">
-          <div id="oi-name" class="name"></div>
+          <div class="name-row">
+            <div id="oi-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <span class="badge yes">✓ SMS actif</span>
 
           <div id="oi-area">
@@ -248,7 +286,10 @@
         </div>
 
         <div id="v-opted-out" class="view">
-          <div id="oo-name" class="name"></div>
+          <div class="name-row">
+            <div id="oo-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <span class="badge no">✗ SMS refusé</span>
           <button id="btn-change" class="btn btn-ghost" style="margin-top:7px">Modifier</button>
         </div>
@@ -261,9 +302,14 @@
 
         </div><!-- /#patient-views -->
 
-        <div id="v-confirmations" class="view">
-          <div id="conf-empty" class="empty hidden">Aucune confirmation en attente</div>
+        <div id="v-responses" class="view">
+          <div id="conf-empty" class="empty hidden">Aucune réponse en attente</div>
           <div id="conf-list"></div>
+        </div>
+
+        <div id="v-history" class="view">
+          <div id="hist-empty" class="empty">Aucun message envoyé pour ce patient.</div>
+          <div id="hist-list"></div>
         </div>
 
       </div>
@@ -273,6 +319,7 @@
         <span class="tab-lbl">Rx</span>
       </button>
     </div>
+    <div id="toast" class="toast hidden" role="status"></div>
   `;
 
   // ── Refs ─────────────────────────────────────────────────────────────────────
@@ -333,10 +380,18 @@
     tabDot.className = 'dot' + (color ? ` ${color}` : '');
   }
 
+  function setLanguageBadge(language) {
+    const code = language === 'EN' ? 'EN' : 'FR';
+    shadow.querySelectorAll('.lang-badge').forEach((el) => {
+      el.textContent = code;
+    });
+  }
+
   function setName(elId, p) {
     const el = $(elId);
     if (!el) return;
     el.textContent = p ? `${(p.lastName || '').toUpperCase()}, ${p.firstName || ''}`.replace(/^,\s*/, '') : '';
+    if (p) setLanguageBadge(p.language);
   }
 
   function resetNotify() {
@@ -345,27 +400,191 @@
     $('oi-success').classList.add('hidden');
   }
 
-  // ── Top nav (Patient / Confirmations) ────────────────────────────────────────
+  // ── Top nav (Patient / Réponses / Historique) ───────────────────────────────
+
+  const Search = globalThis.NotiRxSearch;
+  let toastTimer = 0;
+
+  function showToast(message) {
+    const toast = $('toast');
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.add('hidden'), 4500);
+  }
 
   function setActiveTab(name) {
     $('nav-patient').classList.toggle('active', name === 'patient');
-    $('nav-confirmations').classList.toggle('active', name === 'confirmations');
+    $('nav-responses').classList.toggle('active', name === 'responses');
+    $('nav-history').classList.toggle('active', name === 'history');
     $('patient-views').style.display = name === 'patient' ? '' : 'none';
-    $('v-confirmations').classList.toggle('active', name === 'confirmations');
+    $('v-responses').classList.toggle('active', name === 'responses');
+    $('v-history').classList.toggle('active', name === 'history');
   }
 
   $('nav-patient').addEventListener('click', () => setActiveTab('patient'));
-  $('nav-confirmations').addEventListener('click', () => {
-    setActiveTab('confirmations');
+  $('nav-responses').addEventListener('click', () => {
+    setActiveTab('responses');
     fetchConfirmations();
   });
+  $('nav-history').addEventListener('click', () => {
+    setActiveTab('history');
+    fetchHistory(currentPatient?.phoneRaw);
+  });
 
-  // ── Confirmations (renewal OUI replies) ──────────────────────────────────────
+  // ── Réponses (patients who replied OUI) ──────────────────────────────────────
 
-  const EMPTY_CONFIRMATIONS = 'Aucune confirmation en attente';
+  const EMPTY_CONFIRMATIONS = 'Aucune réponse en attente';
+  const TOAST_COPIED = 'Numéro copié — collez-le dans la recherche (F3)';
+
+  // ── Priorx lock / no signed-in user ─────────────────────────────────────────
+  // The widget stays hidden until LoginName1 is visible and no NIP screen is up.
+  // Every send checks again. If the check cannot tell, it blocks.
+
+  const Lock = globalThis.NotiRxLock;
+  const Lang = globalThis.NotiRxLanguage;
+  let widgetLocked = true;
+  let priorxWasLocked = false;
+  let idleExpired = false;
+  let lastActivityAt = Date.now();
+  let idleMinutes = Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 5;
+  let lockDebug = false;
+
+  function currentAssessment() {
+    if (!Lock) {
+      return {
+        locked: true,
+        reasons: ['lock-helper-missing'],
+        debug: { locked: true, reasons: ['lock-helper-missing'], idleExpired },
+      };
+    }
+    return Lock.assessPriorxSession(document, { idleExpired });
+  }
+
+  function lockDebugPayload(assessment) {
+    const language = Lang ? Lang.readPatientLanguage(document) : 'FR';
+    return { ...(assessment.debug || {}), language: language === 'EN' ? 'EN' : 'FR' };
+  }
+
+  function logLock(assessment) {
+    const debug = lockDebugPayload(assessment);
+    console.info('[NotiRx lock]', debug);
+    try {
+      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(debug));
+    } catch {
+      // The page can refuse the attribute. The console line is enough.
+    }
+  }
+
+  function clearSensitiveUi() {
+    $('conf-list').replaceChildren();
+    $('hist-list').replaceChildren();
+    $('conf-badge').classList.add('hidden');
+    $('conf-badge').textContent = '0';
+    for (const id of ['up-name', 'oi-name', 'oo-name', 'oi-confirm-text']) {
+      const el = $(id);
+      if (el) el.textContent = id === 'oi-confirm-text' ? '' : '';
+    }
+    shadow.querySelectorAll('.lang-badge').forEach((el) => {
+      el.textContent = '';
+    });
+    const confEmpty = $('conf-empty');
+    const histEmpty = $('hist-empty');
+    if (confEmpty) confEmpty.textContent = '';
+    if (histEmpty) histEmpty.textContent = '';
+  }
+
+  function enterLocked() {
+    widgetLocked = true;
+    host.hidden = true;
+    panelOpen = false;
+    panel.classList.remove('open');
+    clearSensitiveUi();
+    currentPatient = null;
+    chrome.runtime.sendMessage({ type: 'PATIENT_CLEARED' });
+  }
+
+  function leaveLocked() {
+    widgetLocked = false;
+    host.hidden = false;
+    lastActivityAt = Date.now();
+    idleExpired = false;
+    onPatientChanged();
+    fetchConfirmations();
+  }
+
+  function enforceLock() {
+    const priorx = Lock
+      ? Lock.assessPriorxSession(document, { idleExpired: false })
+      : { locked: true, reasons: ['lock-helper-missing'], debug: { locked: true, reasons: ['lock-helper-missing'] } };
+    if (priorx.locked) {
+      priorxWasLocked = true;
+    } else if (priorxWasLocked) {
+      priorxWasLocked = false;
+      idleExpired = false;
+      lastActivityAt = Date.now();
+    }
+    const assessment = currentAssessment();
+    if (lockDebug) logLock(assessment);
+    const locked = assessment.locked;
+    if (locked && !widgetLocked) enterLocked();
+    if (!locked && widgetLocked) leaveLocked();
+    widgetLocked = locked;
+    if (locked) host.hidden = true;
+    return assessment;
+  }
+
+  function sessionAllowsAction() {
+    const assessment = currentAssessment();
+    if (assessment.locked) {
+      idleExpired = assessment.reasons.includes('idle') || idleExpired;
+      if (assessment.reasons.some((reason) => reason !== 'idle')) priorxWasLocked = true;
+      if (!widgetLocked) enterLocked();
+      else host.hidden = true;
+      widgetLocked = true;
+      if (lockDebug) logLock(assessment);
+      return false;
+    }
+    return true;
+  }
+
+  let lastAssessAt = 0;
+
+  function noteActivity(event) {
+    const now = Date.now();
+    const cheap = event.type === 'mousemove' || event.type === 'scroll';
+    if (!widgetLocked && !idleExpired) {
+      lastActivityAt = now;
+      return;
+    }
+    if (cheap && now - lastAssessAt < 1000) return;
+    lastAssessAt = now;
+    const priorx = Lock
+      ? Lock.assessPriorxSession(document, { idleExpired: false })
+      : { locked: true };
+    if (priorx.locked) {
+      priorxWasLocked = true;
+      enforceLock();
+      return;
+    }
+    const unlocking = event.type === 'click' || event.type === 'keydown' || event.type === 'pointerdown';
+    if (idleExpired && !unlocking) return;
+    if (idleExpired && unlocking) idleExpired = false;
+    lastActivityAt = now;
+    if (widgetLocked) enforceLock();
+  }
+
+  document.addEventListener('notirx-lock-debug', () => {
+    logLock(currentAssessment());
+  });
 
   function fetchConfirmations() {
-    chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST' }, response => {
+    if (currentAssessment().locked) {
+      $('conf-list').replaceChildren();
+      $('conf-badge').classList.add('hidden');
+      return;
+    }
+    chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST', priorxUnlocked: true }, response => {
       if (!response?.ok) {
         $('conf-list').replaceChildren();
         $('conf-badge').classList.add('hidden');
@@ -379,6 +598,10 @@
   }
 
   function renderConfirmations(items) {
+    if (currentAssessment().locked) {
+      clearSensitiveUi();
+      return;
+    }
     const badge = $('conf-badge');
     badge.textContent = String(items.length);
     badge.classList.toggle('hidden', items.length === 0);
@@ -391,22 +614,50 @@
     listEl.replaceChildren();
 
     items.forEach(item => {
+      const digits = Search ? Search.phoneDigits(item.phone_number) : '';
+      const canSearch = digits.length >= 10;
       const row = document.createElement('div');
-      row.className = 'conf-item';
+      row.className = 'conf-item' + (canSearch ? ' clickable' : '');
 
-      const text = document.createElement('div');
+      const text = document.createElement(canSearch ? 'button' : 'div');
+      text.className = canSearch ? 'conf-open' : 'conf-open conf-open-static';
+      if (canSearch) {
+        text.type = 'button';
+        text.title = 'Placer le numéro dans la recherche Priorx';
+        text.addEventListener('click', () => searchByPhone(digits));
+      }
+
       const name = document.createElement('div');
       name.className = 'conf-name';
-      name.textContent = item.patient_name || 'Numéro inconnu';
+      name.textContent = Search
+        ? Search.firstNameFromPatientName(item.patient_name)
+        : (item.patient_name || 'Patient');
+
+      const typeLabel = Search ? Search.messageTypeLabel(item.message_type) : '';
+      const type = document.createElement('div');
+      type.className = 'conf-type';
+      type.textContent = typeLabel;
+
       const time = document.createElement('div');
       time.className = 'conf-time';
-      time.textContent = formatConfTime(item.replied_at);
-      text.append(name, time);
+      const when = Search ? Search.formatTorontoTime(item.replied_at) : '';
+      const masked = canSearch && Search ? Search.maskPhone(digits) : '';
+      if (!canSearch) {
+        time.textContent = when ? `${when} · Sans numéro` : 'Sans numéro';
+      } else if (masked) {
+        time.textContent = when ? `${when} · ${masked}` : masked;
+      } else {
+        time.textContent = when;
+      }
+
+      text.append(name);
+      if (typeLabel) text.append(type);
+      text.append(time);
 
       const done = document.createElement('button');
       done.type = 'button';
       done.className = 'btn-done';
-      done.textContent = '✓ Fait';
+      done.textContent = 'Fait';
       const confirmationId = item.confirmation_id == null ? '' : String(item.confirmation_id);
       done.addEventListener('click', () => dismissConfirmation(confirmationId));
 
@@ -415,22 +666,116 @@
     });
   }
 
+  async function searchByPhone(digits) {
+    if (!sessionAllowsAction()) return;
+    if (!Search) {
+      showToast('Impossible de placer le numéro. Appuyez sur F3, puis collez-le.');
+      return;
+    }
+    try {
+      const result = await Search.openPatientSearch(document, digits);
+      if (result.filled) return;
+      if (result.copied) {
+        showToast(TOAST_COPIED);
+        return;
+      }
+    } catch {
+      // Fall through to the same notice. The reply list stays as it is.
+    }
+    showToast('Impossible de placer le numéro. Appuyez sur F3, puis collez-le.');
+  }
+
   function dismissConfirmation(confirmationId) {
-    chrome.runtime.sendMessage({ type: 'CONFIRMATION_DISMISS', confirmationId }, response => {
+    if (!sessionAllowsAction()) return;
+    chrome.runtime.sendMessage({ type: 'CONFIRMATION_DISMISS', confirmationId, priorxUnlocked: true }, response => {
       if (response?.ok) fetchConfirmations();
+      else showToast('Impossible de marquer cette réponse comme terminée.');
     });
   }
 
-  function formatConfTime(iso) {
-    if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' });
-    } catch {
-      return iso;
+  // ── Historique (texts for the open patient file) ────────────────────────────
+
+  let historyRequest = 0;
+
+  function fetchHistory(phoneRaw) {
+    if (currentAssessment().locked) {
+      $('hist-list').replaceChildren();
+      $('hist-empty').textContent = '';
+      return;
     }
+    const requestId = ++historyRequest;
+    const digits = Search ? Search.phoneDigits(phoneRaw) : String(phoneRaw || '').replace(/\D/g, '');
+    const empty = $('hist-empty');
+    const listEl = $('hist-list');
+    listEl.replaceChildren();
+
+    if (!currentPatient) {
+      empty.textContent = 'Aucun patient.';
+      empty.classList.remove('hidden');
+      return;
+    }
+    if (digits.length < 10) {
+      empty.textContent = 'Numéro introuvable dans le dossier.';
+      empty.classList.remove('hidden');
+      return;
+    }
+
+    empty.textContent = 'Chargement…';
+    empty.classList.remove('hidden');
+    chrome.runtime.sendMessage({ type: 'MESSAGES_HISTORY', phoneNumber: digits, priorxUnlocked: true }, response => {
+      if (requestId !== historyRequest) return;
+      renderHistory(response);
+    });
   }
 
-  fetchConfirmations();
+  function renderHistory(response) {
+    if (currentAssessment().locked) {
+      clearSensitiveUi();
+      return;
+    }
+    const empty = $('hist-empty');
+    const listEl = $('hist-list');
+    listEl.replaceChildren();
+
+    if (!response?.ok) {
+      empty.textContent = response?.error || "Impossible de charger l'historique.";
+      empty.classList.remove('hidden');
+      return;
+    }
+
+    const messages = Search
+      ? Search.sortMessagesNewestFirst(response.messages)
+      : (response.messages || []);
+    empty.textContent = 'Aucun message envoyé pour ce patient.';
+    empty.classList.toggle('hidden', messages.length > 0);
+    if (!messages.length) return;
+
+    messages.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'conf-item';
+      const text = document.createElement('div');
+      text.className = 'conf-open conf-open-static';
+
+      const title = document.createElement('div');
+      title.className = 'conf-name';
+      title.textContent = Search ? Search.historyEntryTitle(entry) : 'Message';
+
+      const meta = document.createElement('div');
+      meta.className = 'conf-time';
+      const when = Search ? Search.formatTorontoTime(entry.sent_at) : '';
+      const who = entry.sent_by ? String(entry.sent_by) : '';
+      meta.textContent = [when, who].filter(Boolean).join(' · ');
+
+      text.append(title, meta);
+      row.append(text);
+      listEl.appendChild(row);
+    });
+  }
+
+  setInterval(() => {
+    if (Date.now() - lastActivityAt >= idleMinutes * 60 * 1000) idleExpired = true;
+    enforceLock();
+  }, 5000);
   setInterval(fetchConfirmations, 20000);
 
   // ── Messages from background ───────────────────────────────────────────────
@@ -439,20 +784,28 @@
     switch (msg.type) {
 
       case 'STATE_UPDATE':
+        if (currentAssessment().locked) {
+          if (!widgetLocked) enforceLock();
+          break;
+        }
         applyState(msg);
         break;
 
       case 'NOTIFY_SUCCESS':
+        if (!sessionAllowsAction()) break;
         $('oi-area').classList.add('hidden');
         $('oi-confirm').classList.add('hidden');
         $('oi-success').classList.remove('hidden');
         setTimeout(resetNotify, 3000);
+        fetchHistory(currentPatient?.phoneRaw);
         break;
 
       case 'NOTIFY_ERROR':
         resetNotify();
         if (msg.consentRevoked) {
-          chrome.runtime.sendMessage({ type: 'RETRY_PATIENT', patient: currentPatient });
+          if (sessionAllowsAction()) {
+            chrome.runtime.sendMessage({ type: 'RETRY_PATIENT', patient: currentPatient, priorxUnlocked: true });
+          }
         } else {
           $('err-msg').textContent = msg.error || '';
           showView('error');
@@ -468,6 +821,7 @@
   });
 
   function applyState(msg) {
+    if (currentAssessment().locked) return;
     $('oi-reinscription').classList.add('hidden');
     const p = msg.patient;
 
@@ -518,7 +872,20 @@
   });
 
   $('btn-send-yes').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'NOTIFY_SEND', patient: currentPatient, messageType: pendingNotifyType });
+    if (!sessionAllowsAction()) return;
+    if (currentPatient) {
+      currentPatient = {
+        ...currentPatient,
+        language: Lang ? Lang.readPatientLanguage(document) : 'FR',
+      };
+      setLanguageBadge(currentPatient.language);
+    }
+    chrome.runtime.sendMessage({
+      type: 'NOTIFY_SEND',
+      patient: currentPatient,
+      messageType: pendingNotifyType,
+      priorxUnlocked: true,
+    });
   });
 
   $('btn-send-no').addEventListener('click', resetNotify);
@@ -548,9 +915,11 @@
   });
 
   function saveConsent(consent) {
+    if (!sessionAllowsAction()) return;
     showView('loading'); setDot('');
     chrome.runtime.sendMessage({
       type: 'CONSENT_SAVE',
+      priorxUnlocked: true,
       data: { consent, recordedBy: currentPatient?.user || 'unknown', patient: currentPatient },
     }, response => {
       if (!response?.ok) {
@@ -570,29 +939,46 @@
     const info2     = document.getElementById('BA01_Info2')?.textContent?.trim() || '';
     const user      = document.getElementById('LoginName1')?.textContent?.trim() || '';
     const phoneRaw  = info2.split(' - ')[0].trim().replace(/\D/g, '');
-    return { lastName, firstName, phoneRaw, user };
+    // Confirmed id: #BA01_language in PRIORX_LANGUAGE_SELECTORS (priorx-language.js).
+    // Missing or unreadable language becomes FR and does not block the send.
+    const language = Lang ? Lang.readPatientLanguage(document) : 'FR';
+    return { lastName, firstName, phoneRaw, user, language };
   }
 
   function onPatientChanged() {
+    if (currentAssessment().locked) {
+      if (!widgetLocked) enforceLock();
+      return;
+    }
     const patient = readPatientFromDOM();
     if (!patient.lastName && !patient.firstName) {
       currentPatient = null;
       chrome.runtime.sendMessage({ type: 'PATIENT_CLEARED' });
+      fetchHistory('');
       return;
     }
     if (
       currentPatient &&
       currentPatient.lastName  === patient.lastName &&
-      currentPatient.firstName === patient.firstName
-    ) return;
+      currentPatient.firstName === patient.firstName &&
+      currentPatient.phoneRaw === patient.phoneRaw
+    ) {
+      if (currentPatient.language !== patient.language) {
+        currentPatient = patient;
+        setLanguageBadge(patient.language);
+      }
+      return;
+    }
     currentPatient = patient;
-    chrome.runtime.sendMessage({ type: 'PATIENT_CHANGED', data: patient });
+    chrome.runtime.sendMessage({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
+    fetchHistory(patient.phoneRaw);
   }
 
   const nameTarget = document.getElementById('BA01_LastName');
   if (nameTarget) {
+    const nameWatch = nameTarget.parentElement || nameTarget;
     new MutationObserver(onPatientChanged)
-      .observe(nameTarget, { childList: true, subtree: true, characterData: true });
+      .observe(nameWatch, { childList: true, subtree: true, characterData: true });
   }
 
   const info2Target = document.getElementById('BA01_Info2');
@@ -600,5 +986,42 @@
     new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
       .observe(info2Target, { childList: true, subtree: true, characterData: true });
   }
+
+  if (Lang) {
+    for (const selector of Lang.PRIORX_LANGUAGE_SELECTORS) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
+        .observe(el, { childList: true, subtree: true, characterData: true });
+    }
+  }
+
+  for (const eventName of ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown']) {
+    document.addEventListener(eventName, noteActivity, true);
+  }
+
+  let lockTimer = 0;
+  new MutationObserver(() => {
+    clearTimeout(lockTimer);
+    lockTimer = setTimeout(enforceLock, 50);
+  }).observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['style', 'class', 'hidden', 'aria-hidden', 'aria-modal'],
+    characterData: true,
+  });
+
+  chrome.storage.local.get(['idleLockMinutes', 'lockDebug'], (data) => {
+    if (Lock) idleMinutes = Lock.normalizeIdleLockMinutes(data?.idleLockMinutes);
+    lockDebug = Boolean(data?.lockDebug);
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !Lock) return;
+    if (changes.idleLockMinutes) idleMinutes = Lock.normalizeIdleLockMinutes(changes.idleLockMinutes.newValue);
+    if (changes.lockDebug) lockDebug = Boolean(changes.lockDebug.newValue);
+  });
+
+  enforceLock();
 
 })();

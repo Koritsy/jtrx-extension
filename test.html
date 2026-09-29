@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>NotiRx — Test</title>
   <style>
-    body { font-family: system-ui; max-width: 400px; margin: 60px auto; padding: 0 20px; }
+    body { font-family: system-ui; max-width: 520px; margin: 40px auto; padding: 0 20px; }
     h2 { font-size: 16px; margin-bottom: 20px; color: #1a237e; }
     p  { font-size: 13px; color: #555; margin-bottom: 20px; line-height: 1.5; }
 
@@ -12,39 +12,120 @@
             padding: 14px 16px; margin-bottom: 20px; min-height: 70px; }
     .card-name { font-size: 16px; font-weight: 700; color: #1a237e; }
     .card-info { font-size: 13px; color: #555; margin-top: 4px; }
+    .lang-field { display: inline-block; min-width: 2.5em; margin-left: 8px;
+                  padding: 0 4px; border-radius: 4px; background: #e3f2fd; color: #1565c0;
+                  font-size: 12px; font-weight: 700; }
 
     button { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px;
              font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
     .load  { background: #1a237e; color: white; }
     .clear { background: #ffebee; color: #c62828; }
+    .search-btn { background: #1565c0; color: white; font-size: 14px; }
+    label { display: block; font-size: 13px; margin: 8px 0 14px; }
+    #search-status, #key-log {
+      font-size: 13px; background: #fafafa; border: 1px solid #eee;
+      border-radius: 8px; padding: 10px; margin-top: 8px; white-space: pre-wrap;
+    }
+    .search-field { width: 100%; padding: 8px; font-size: 14px; margin-bottom: 8px; }
 
-    /* Hidden Priorx DOM — content.js reads these */
-    #priorx { display: none; }
+    #priorx {
+      border: 1px solid #c5cae9; border-radius: 8px; padding: 8px 10px;
+      margin: 12px 0 16px; font-size: 13px; background: #fff;
+    }
+    #priorx div { min-height: 18px; }
+    .overlay {
+      position: fixed; inset: 0; z-index: 20;
+      background: rgba(26, 35, 126, .92); color: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px;
+    }
+    .overlay[hidden] { display: none; }
+    #full-cover { background: rgba(0, 0, 0, .55); }
+    #demo-widget, #demo-locked {
+      border-radius: 8px; padding: 10px; margin-top: 8px; font-size: 13px;
+    }
+    #demo-widget { background: #e8f5e9; color: #2e7d32; }
+    #demo-locked { background: #ffebee; color: #c62828; }
+    #lock-status { white-space: pre-wrap; }
   </style>
 </head>
 <body>
 
   <h2>NotiRx — Page de test</h2>
   <p>
-    Données fictives. Le widget n’apparaît que sur
-    <strong>https://4502812786.priorx.ca</strong>
-    (le dossier patient est sous <strong>/4502812786.Web/</strong>).
-    Les champs lus sont les identifiants BA01_LastName, BA01_FirstName et BA01_Info2.
-    Clique <strong>Charger un patient fictif</strong>, puis l’onglet bleu <strong>Rx</strong>.
+    Données fictives (Alex Exemple, 555-010-0199). Le widget n’apparaît que sur
+    <strong>https://4502812786.priorx.ca</strong>.
+    Cette page teste aussi la recherche F3 sans Priorx : un clic envoie F3,
+    attend le champ, et y place le numéro. Aucune touche Entrée n’est envoyée.
   </p>
 
   <!-- Visible preview -->
   <div class="card">
-    <div class="card-name" id="preview-name">Aucun patient chargé</div>
+    <div class="card-name" id="preview-name">Aucun patient chargé <span id="preview-lang" class="lang-field"></span></div>
     <div class="card-info" id="preview-info"></div>
   </div>
 
   <button class="load"  onclick="load()">Charger un patient fictif</button>
-  <button class="clear" onclick="clear()">✕ Effacer le patient</button>
+  <button class="clear" onclick="clearPatient()">✕ Effacer le patient</button>
+  <label>
+    Langue fictive (à côté du nom)
+    <select id="fake-language">
+      <option value="FR">FR</option>
+      <option value="EN">EN</option>
+      <option value="anglais">anglais</option>
+      <option value="">vide</option>
+    </select>
+  </label>
 
-  <!-- Hidden Priorx DOM read by content.js -->
+  <h2>Recherche F3 (sans Priorx)</h2>
+  <p>
+    Le champ « recherche F3 » est caché jusqu’à la touche F3, comme sur Priorx.
+    Le second champ est le champ Priorx confirmé,
+    <strong>#BA01_Keywords</strong>.
+    Le clic envoie F3, écrit le numéro, et n’appuie pas sur Entrée.
+  </p>
+  <label>
+    <input id="ignore-synthetic" type="checkbox" />
+    Ignorer les F3 non fiables (isTrusted = faux), comme Priorx pourrait le faire
+  </label>
+  <input id="priorx-f3-search" class="search-field" hidden placeholder="Recherche F3" />
+  <input id="BA01_Keywords" class="search-field" hidden placeholder="BA01_Keywords" />
+  <button id="btn-f3-happy" class="search-btn" type="button">Clic réponse — F3 ouvre le champ</button>
+  <button id="btn-f3-fallback" class="search-btn" type="button">Clic réponse — F3 ignoré, champ de secours</button>
+  <button id="btn-f3-clipboard" class="search-btn" type="button">Clic réponse — aucun champ (copie)</button>
+  <div id="search-status">En attente d’un clic.</div>
+  <div id="key-log"></div>
+
+  <h2>Écran NIP (verrouillage)</h2>
+  <p>
+    Le dossier simulé ci-dessous est visible, avec un nom d’utilisateur.
+    Afficher l’écran NIP, un champ mot de passe sans id connu, ou une couche qui couvre le dossier
+    doit masquer le widget démo. Aucun numéro n’est affiché.
+  </p>
+  <div id="demo-widget">Widget démo visible. Réponses et historique restent masqués ici.</div>
+  <div id="demo-locked" hidden>Widget masqué — session verrouillée. Aucun envoi.</div>
+  <div id="lock-status">Verrouillé : …</div>
+  <button id="btn-show-nip" class="search-btn" type="button">Afficher l’écran NIP</button>
+  <button id="btn-show-password" class="search-btn" type="button">Afficher un NIP sans id connu</button>
+  <button id="btn-cover" class="search-btn" type="button">Couvrir le dossier</button>
+  <button id="btn-clear-login" class="clear" type="button">Vider le nom d’utilisateur</button>
+  <button id="btn-hide-login" class="clear" type="button">Masquer le nom d’utilisateur</button>
+  <button id="btn-unlock" class="load" type="button">Réouvrir la session</button>
+
+  <div id="lockscreen" class="overlay" hidden>
+    <p>Écran NIP simulé</p>
+    <input id="txtNIP" type="password" autocomplete="off" placeholder="NIP" />
+  </div>
+  <div id="mystery-nip-layer" class="overlay" hidden>
+    <p>Champ mot de passe sans id de verrou connu</p>
+    <input id="mystery-nip" type="password" autocomplete="off" />
+  </div>
+  <div id="full-cover" class="overlay" hidden></div>
+
+  <!-- Priorx fields read by content.js. Visible here so the lock check can see them. -->
   <div id="priorx">
     <div id="BA01_LastName"></div>
+    <span id="BA01_language" title="Langue du patient"></span>
     <div id="BA01_FirstName"></div>
     <div id="BA01_Info2"></div>
     <div id="LoginName1">DEMO</div>
@@ -57,22 +138,190 @@
       if (value) el.appendChild(document.createTextNode(value));
     }
 
+    function applyFakeLanguage() {
+      const raw = document.getElementById('fake-language').value;
+      setText('BA01_language', raw);
+      const detected = window.NotiRxLanguage
+        ? window.NotiRxLanguage.readPatientLanguage(document)
+        : 'FR';
+      document.getElementById('preview-lang').textContent = detected;
+    }
+
     function load() {
       setText('BA01_FirstName', ', Alex');
       setText('BA01_Info2', '555-010-0199 - 100 rue Fictive, Ville-Test');
+      applyFakeLanguage();
       // Fire lastName last — content.js watches this one
       setTimeout(() => {
         setText('BA01_LastName', 'Exemple');
-        document.getElementById('preview-name').textContent = 'EXEMPLE, Alex';
+        document.getElementById('preview-name').firstChild.textContent = 'EXEMPLE, Alex ';
         document.getElementById('preview-info').textContent = '555-010-0199 — 100 rue Fictive, Ville-Test';
+        applyFakeLanguage();
       }, 50);
     }
 
-    function clear() {
-      ['BA01_LastName','BA01_FirstName','BA01_Info2'].forEach(id => setText(id, ''));
-      document.getElementById('preview-name').textContent = 'Aucun patient chargé';
+    function clearPatient() {
+      ['BA01_LastName','BA01_FirstName','BA01_Info2','BA01_language'].forEach(id => setText(id, ''));
+      document.getElementById('preview-name').firstChild.textContent = 'Aucun patient chargé ';
       document.getElementById('preview-info').textContent = '';
+      document.getElementById('preview-lang').textContent = '';
     }
+
+    document.getElementById('fake-language').addEventListener('change', applyFakeLanguage);
+  </script>
+  <script src="priorx-search.js"></script>
+  <script src="priorx-lock.js"></script>
+  <script src="priorx-language.js"></script>
+  <script>
+    const PHONE = '5550100199';
+    const f3Field = document.getElementById('priorx-f3-search');
+    const fallbackField = document.getElementById('BA01_Keywords');
+    const statusEl = document.getElementById('search-status');
+    const logEl = document.getElementById('key-log');
+    const ignoreBox = document.getElementById('ignore-synthetic');
+    let enterSeen = false;
+
+    function hideField(el) {
+      el.hidden = true;
+      el.value = '';
+    }
+
+    function logLine(text) {
+      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+    }
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.keyCode === 13) {
+        enterSeen = true;
+        event.preventDefault();
+        logLine('Entrée reçue — cela ne devrait pas arriver.');
+        return;
+      }
+      const isF3 = event.key === 'F3' || event.code === 'F3' || event.keyCode === 114;
+      if (!isF3) return;
+      logLine('F3 key=' + event.key + ' code=' + event.code + ' keyCode=' + event.keyCode + ' isTrusted=' + event.isTrusted);
+      if (ignoreBox.checked && event.isTrusted === false) {
+        logLine('F3 ignoré (événement non fiable).');
+        return;
+      }
+      f3Field.hidden = false;
+      f3Field.focus();
+    });
+
+    function showResult(result) {
+      const lines = [
+        'Rempli : ' + (result.filled ? 'oui' : 'non'),
+        'Copié : ' + (result.copied ? 'oui' : 'non'),
+        'Champ F3 : ' + (f3Field.hidden ? '(caché)' : f3Field.value || '(vide)'),
+        'Champ de secours : ' + (fallbackField.hidden ? '(caché)' : fallbackField.value || '(vide)'),
+        'Touche Entrée envoyée : ' + (enterSeen ? 'oui' : 'non'),
+      ];
+      if (!result.filled && result.copied) {
+        lines.push('Numéro copié — collez-le dans la recherche (F3)');
+      }
+      statusEl.textContent = lines.join('\n');
+    }
+
+    async function runSearch() {
+      enterSeen = false;
+      logEl.textContent = '';
+      const result = await NotiRxSearch.openPatientSearch(document, PHONE, { waitMs: 400 });
+      showResult(result);
+    }
+
+    document.getElementById('btn-f3-happy').addEventListener('click', () => {
+      ignoreBox.checked = false;
+      hideField(f3Field);
+      hideField(fallbackField);
+      runSearch();
+    });
+
+    document.getElementById('btn-f3-fallback').addEventListener('click', () => {
+      ignoreBox.checked = true;
+      hideField(f3Field);
+      fallbackField.hidden = false;
+      fallbackField.value = '';
+      runSearch();
+    });
+
+    document.getElementById('btn-f3-clipboard').addEventListener('click', () => {
+      ignoreBox.checked = true;
+      hideField(f3Field);
+      hideField(fallbackField);
+      runSearch();
+    });
+
+    const nipOverlay = document.getElementById('lockscreen');
+    const mysteryLayer = document.getElementById('mystery-nip-layer');
+    const fullCover = document.getElementById('full-cover');
+    const loginEl = document.getElementById('LoginName1');
+    const demoWidget = document.getElementById('demo-widget');
+    const demoLocked = document.getElementById('demo-locked');
+    const lockStatus = document.getElementById('lock-status');
+
+    function lockDebugPayload(assessment) {
+      const language = NotiRxLanguage.readPatientLanguage(document);
+      return { ...assessment.debug, language: language === 'EN' ? 'EN' : 'FR' };
+    }
+
+    document.addEventListener('notirx-lock-debug', () => {
+      const assessment = NotiRxLock.assessPriorxSession(document);
+      const debug = lockDebugPayload(assessment);
+      console.info('[NotiRx lock]', debug);
+      document.documentElement.setAttribute('data-notirx-lock-debug', JSON.stringify(debug));
+    });
+
+    function refreshLock() {
+      const result = NotiRxLock.assessPriorxSession(document);
+      lockStatus.textContent = 'Verrouillé : ' + (result.locked ? 'oui' : 'non')
+        + '\nRaisons : ' + (result.reasons.join(', ') || 'aucune');
+      demoWidget.hidden = result.locked;
+      demoLocked.hidden = !result.locked;
+      const dumped = JSON.stringify(result.debug);
+      if (dumped.includes('555')) lockStatus.textContent += '\nERREUR : un numéro est dans le diagnostic.';
+    }
+
+    function hideLockLayers() {
+      nipOverlay.hidden = true;
+      mysteryLayer.hidden = true;
+      fullCover.hidden = true;
+    }
+
+    document.getElementById('btn-show-nip').addEventListener('click', () => {
+      hideLockLayers();
+      nipOverlay.hidden = false;
+      refreshLock();
+    });
+    document.getElementById('btn-show-password').addEventListener('click', () => {
+      hideLockLayers();
+      mysteryLayer.hidden = false;
+      refreshLock();
+    });
+    document.getElementById('btn-cover').addEventListener('click', () => {
+      hideLockLayers();
+      fullCover.hidden = false;
+      refreshLock();
+    });
+    document.getElementById('btn-clear-login').addEventListener('click', () => {
+      hideLockLayers();
+      loginEl.hidden = false;
+      loginEl.textContent = '';
+      refreshLock();
+    });
+    document.getElementById('btn-hide-login').addEventListener('click', () => {
+      hideLockLayers();
+      loginEl.hidden = true;
+      loginEl.textContent = 'DEMO';
+      refreshLock();
+    });
+    document.getElementById('btn-unlock').addEventListener('click', () => {
+      hideLockLayers();
+      loginEl.hidden = false;
+      loginEl.textContent = 'DEMO';
+      refreshLock();
+    });
+
+    refreshLock();
   </script>
 </body>
 </html>

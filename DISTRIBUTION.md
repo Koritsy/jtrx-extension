@@ -28,7 +28,7 @@ The page has to match what the extension actually does (`SECURITY.md`). A draft 
 
 - NotiRx is used by pharmacy staff inside Priorx. It adds buttons that ask the NotiRx service to text the patient.
 - On the patient file it reads the last name (shown only on that computer), the first name, the phone number, and the signed-in staff name.
-- It sends the phone number to the NotiRx service. It sends the first name only when a staff member confirms a text. It sends the staff name only when a yes or no consent is saved.
+- It sends the phone number to the NotiRx service. It sends the first name only when a staff member confirms a text. It sends the staff name when a yes or no consent is saved, and again as the sender when a text is confirmed.
 - The text itself is delivered by Twilio. Message content and the phone number are processed by Twilio in the United States.
 - The API address and API key are saved in the browser on that computer, or set by the pharmacy’s administrator through enterprise policy. They are not in the extension files.
 - The extension does not run in a private browsing window.
@@ -37,7 +37,7 @@ Do not write that the extension encrypts data itself, that texts stay in Canada,
 
 ## Version
 
-The manifest version is **1.2.0**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy.
+The manifest version is **1.3.0**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy.
 
 ## Icons
 
@@ -51,9 +51,9 @@ From the extension folder:
 sh scripts/pack-extension.sh
 ```
 
-The script stops unless both match patterns are exactly `https://4502812786.priorx.ca/*`. It writes `dist/notirx-1.2.0.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
+The script stops unless both match patterns are exactly `https://4502812786.priorx.ca/*`. It writes `dist/notirx-1.3.0.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
 
-The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
+The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `priorx-language.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
 
 Leave out `test.html`, the test files, `.git`, and any `config.js`.
 
@@ -73,11 +73,11 @@ Pharmacists open one link, click to install, and later versions arrive automatic
 
 Text for the permission boxes:
 
-- **Single purpose:** Lets pharmacy staff send one of four text messages about the prescription that is open in Priorx, and shows patients who replied OUI.
+- **Single purpose:** Lets pharmacy staff send one of four text messages about the prescription that is open in Priorx, shows patients who replied OUI, and shows the texts already sent for the open file.
 - **storage:** Saves the API address and API key typed on the Options page in this browser, or reads those two values when an administrator sets them by policy.
-- **Host permission:** Runs only on `https://4502812786.priorx.ca`. The widget reads the name, phone, and signed-in staff name when those fields are on the page (the patient file under `/4502812786.Web/`). Another store is a different subdomain and is not included.
+- **Host permission:** Runs only on `https://4502812786.priorx.ca`. The widget reads the name, phone, language (FR or EN), and signed-in staff name when those fields are on the page (the patient file under `/4502812786.Web/`). Another store is a different subdomain and is not included.
 
-Data to declare in the privacy questions: phone number, patient first name, staff name when consent is saved, and which of the four messages was chosen. The last name stays on the computer. The extension does not collect account passwords or browsing history.
+Data to declare in the privacy questions: phone number, patient first name, staff name when consent is saved and when a text is confirmed, which of the four messages was chosen, and whether the text is French or English (`FR` or `EN` only). The last name stays on the computer. The extension does not collect account passwords or browsing history.
 
 ## Option 2 — Edge Add-ons
 

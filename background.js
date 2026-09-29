@@ -6,6 +6,7 @@ import {
   confirmationsList,
   consentLookup,
   consentSave,
+  messagesHistory,
   notifySend,
 } from './api-contract.mjs';
 import { pickRuntimeConfig } from './runtime-config.mjs';
@@ -55,8 +56,20 @@ async function apiRequest(method, path, body = null) {
   if (body) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${apiBaseUrl}${path}`, opts);
-  if (!res.ok) throw new Error(`API ${method} ${path} → ${res.status}`);
-  return res.json();
+  if (!res.ok) {
+    const error = new Error(`API ${method} ${path} → ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
+  const text = await res.text();
+  if (!text) return {};
+  return JSON.parse(text);
+}
+
+function rejectIfLocked(msg, sendResponse) {
+  if (msg?.priorxUnlocked === true) return false;
+  sendResponse({ ok: false, error: 'Priorx est verrouillé.' });
+  return true;
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -66,6 +79,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'PATIENT_CHANGED':
       activeTabId = sender.tab?.id ?? activeTabId;
+      if (msg.priorxUnlocked !== true) {
+        delete tabState[tabId];
+        broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
+        break;
+      }
       handlePatientChanged(tabId, msg.data);
       break;
 
@@ -75,22 +93,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
 
     case 'CONSENT_SAVE':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleConsentSave(tabId, msg.data, sendResponse);
       return true;
 
     case 'NOTIFY_SEND':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleNotifySend(tabId, sendResponse, msg.patient, msg.messageType);
       return true;
 
     case 'CONFIRMATIONS_LIST':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleConfirmationsList(sendResponse);
       return true;
 
     case 'CONFIRMATION_DISMISS':
+      if (rejectIfLocked(msg, sendResponse)) return true;
       handleConfirmationDismiss(msg.confirmationId, sendResponse);
       return true;
 
+    case 'MESSAGES_HISTORY':
+      if (rejectIfLocked(msg, sendResponse)) return true;
+      handleMessagesHistory(msg.phoneNumber, sendResponse);
+      return true;
+
     case 'RETRY_PATIENT': {
+      if (msg.priorxUnlocked !== true) {
+        broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
+        break;
+      }
       const patient = tabState[tabId]?.patient ?? msg.patient;
       if (patient) {
         handlePatientChanged(tabId, patient);
@@ -160,6 +191,11 @@ async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatie
   }
 }
 
+function messageLanguage(msgPatient, patient) {
+  const value = msgPatient?.language ?? patient?.language;
+  return value === 'EN' ? 'EN' : 'FR';
+}
+
 async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
   const patient = tabState[tabId]?.patient ?? msgPatient;
   if (!patient) return sendResponse({ ok: false, error: 'No patient' });
@@ -169,6 +205,8 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
       phoneNumber: patient.phoneRaw,
       patientName: patient.firstName,
       messageType,
+      sentBy: patient.user,
+      language: messageLanguage(msgPatient, patient),
     });
     const result = await apiRequest(req.method, req.path, req.body);
     broadcastToPanel(tabId, { type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
@@ -189,6 +227,24 @@ async function handleConfirmationsList(sendResponse) {
     sendResponse({ ok: true, confirmations });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
+  }
+}
+
+async function handleMessagesHistory(phoneNumber, sendResponse) {
+  try {
+    const req = messagesHistory(phoneNumber);
+    const result = await apiRequest(req.method, req.path, req.body);
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    sendResponse({ ok: true, messages });
+  } catch (err) {
+    const unavailable = err.status === 404;
+    sendResponse({
+      ok: false,
+      unavailable,
+      error: unavailable
+        ? "L'historique n'est pas disponible. Mettez à jour le serveur avec cette extension."
+        : "Impossible de charger l'historique.",
+    });
   }
 }
 
