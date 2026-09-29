@@ -13,7 +13,7 @@ const lockDebugInput = document.getElementById('lock-debug');
 
 function idleMinutesFromInput() {
   const Lock = globalThis.NotiRxLock;
-  if (!Lock) return 10;
+  if (!Lock) return 5;
   return Lock.normalizeIdleLockMinutes(idleInput.value);
 }
 
@@ -73,8 +73,8 @@ function showIdleSetting(local) {
   const Lock = globalThis.NotiRxLock;
   idleInput.value = String(
     local.idleLockMinutes == null
-      ? (Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 10)
-      : (Lock ? Lock.normalizeIdleLockMinutes(local.idleLockMinutes) : 10),
+      ? (Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 5)
+      : (Lock ? Lock.normalizeIdleLockMinutes(local.idleLockMinutes) : 5),
   );
   lockDebugInput.checked = Boolean(local.lockDebug);
 }

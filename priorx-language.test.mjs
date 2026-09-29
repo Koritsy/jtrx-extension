@@ -61,31 +61,29 @@ test('english tokens become EN and everything else becomes FR', () => {
   }
 });
 
-test('a guessed language field is read, and an empty guess is skipped', () => {
+test('#BA01_language text is read, and the wrong capital letter is ignored', () => {
   const name = el({ id: 'BA01_LastName', text: 'Exemple' });
-  const empty = el({ id: 'BA01_Language', text: '   ' });
-  const langue = el({ id: 'BA01_Langue', text: ' anglais ' });
-  const doc = documentWith([name, empty, langue]);
-  assert.equal(language.readPatientLanguage(doc), 'EN');
+  const wrongCase = el({ id: 'BA01_Language', text: 'EN' });
+  assert.equal(language.readPatientLanguage(documentWith([name, wrongCase])), 'FR');
+  assert.deepEqual(language.PRIORX_LANGUAGE_SELECTORS, ['#BA01_language']);
+
+  const langue = el({ id: 'BA01_language', text: ' anglais ' });
+  assert.equal(language.readPatientLanguage(documentWith([name, wrongCase, langue])), 'EN');
 });
 
-test('the first non-empty guessed field wins', () => {
-  const first = el({ id: 'BA01_Language', text: 'FR' });
-  const second = el({ id: 'BA01_Langue', text: 'EN' });
-  assert.equal(language.readPatientLanguage(documentWith([first, second])), 'FR');
+test('an empty language span is skipped for a nearby FR or EN label', () => {
+  const name = el({ id: 'BA01_LastName', text: 'Exemple' });
+  const empty = el({ id: 'BA01_language', text: '   ' });
+  const lang = el({ text: 'EN' });
+  const parent = el({ children: [name, empty, lang] });
+  assert.equal(language.readPatientLanguage(documentWith([parent])), 'EN');
 });
 
-test('a select or input value is read', () => {
-  const select = el({
-    tag: 'SELECT',
-    id: 'ddlLangue',
-    value: 'EN',
-    text: 'EN',
-  });
-  assert.equal(language.readPatientLanguage(documentWith([select])), 'EN');
-
-  const input = el({ tag: 'INPUT', id: 'txtLangue', value: 'english', text: '' });
-  assert.equal(language.readPatientLanguage(documentWith([input])), 'EN');
+test('the language span text is read', () => {
+  const english = el({ tag: 'SPAN', id: 'BA01_language', text: 'ENG' });
+  assert.equal(language.readPatientLanguage(documentWith([english])), 'EN');
+  const french = el({ tag: 'SPAN', id: 'BA01_language', text: 'FR' });
+  assert.equal(language.readPatientLanguage(documentWith([french])), 'FR');
 });
 
 test('a small FR or EN field next to the name is used when no id matches', () => {
@@ -120,7 +118,7 @@ test('a missing or unreadable language falls back to FR', () => {
 test('the language result is only FR or EN', () => {
   const name = el({ id: 'BA01_LastName', text: 'Exemple' });
   const info = el({ id: 'BA01_Info2', text: '555-010-0199 - 100 rue Fictive' });
-  const lang = el({ id: 'BA01_Langue', text: 'Exemple, Alex' });
+  const lang = el({ id: 'BA01_language', text: 'Exemple, Alex' });
   const code = language.readPatientLanguage(documentWith([name, info, lang]));
   assert.equal(code, 'FR');
   assert.equal(JSON.stringify({ language: code }).includes('555'), false);

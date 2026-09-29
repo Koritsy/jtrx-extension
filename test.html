@@ -80,17 +80,16 @@
   <h2>Recherche F3 (sans Priorx)</h2>
   <p>
     Le champ « recherche F3 » est caché jusqu’à la touche F3, comme sur Priorx.
-    Le second champ utilise le sélecteur de secours
-    <strong>#PRIORX_SEARCH_FIELD_ID_UNCONFIRMED</strong>.
-    Cet identifiant n’est pas celui de Priorx : à la pharmacie, Josi doit le confirmer
-    (clic droit sur le champ de recherche → Inspecter).
+    Le second champ est le champ Priorx confirmé,
+    <strong>#BA01_Keywords</strong>.
+    Le clic envoie F3, écrit le numéro, et n’appuie pas sur Entrée.
   </p>
   <label>
     <input id="ignore-synthetic" type="checkbox" />
     Ignorer les F3 non fiables (isTrusted = faux), comme Priorx pourrait le faire
   </label>
   <input id="priorx-f3-search" class="search-field" hidden placeholder="Recherche F3" />
-  <input id="PRIORX_SEARCH_FIELD_ID_UNCONFIRMED" class="search-field" hidden placeholder="Sélecteur de secours" />
+  <input id="BA01_Keywords" class="search-field" hidden placeholder="BA01_Keywords" />
   <button id="btn-f3-happy" class="search-btn" type="button">Clic réponse — F3 ouvre le champ</button>
   <button id="btn-f3-fallback" class="search-btn" type="button">Clic réponse — F3 ignoré, champ de secours</button>
   <button id="btn-f3-clipboard" class="search-btn" type="button">Clic réponse — aucun champ (copie)</button>
@@ -113,7 +112,7 @@
   <button id="btn-hide-login" class="clear" type="button">Masquer le nom d’utilisateur</button>
   <button id="btn-unlock" class="load" type="button">Réouvrir la session</button>
 
-  <div id="PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED" class="overlay" hidden>
+  <div id="lockscreen" class="overlay" hidden>
     <p>Écran NIP simulé</p>
     <input id="txtNIP" type="password" autocomplete="off" placeholder="NIP" />
   </div>
@@ -126,7 +125,7 @@
   <!-- Priorx fields read by content.js. Visible here so the lock check can see them. -->
   <div id="priorx">
     <div id="BA01_LastName"></div>
-    <div id="BA01_Langue" title="Champ langue non confirmé sur Priorx"></div>
+    <span id="BA01_language" title="Langue du patient"></span>
     <div id="BA01_FirstName"></div>
     <div id="BA01_Info2"></div>
     <div id="LoginName1">DEMO</div>
@@ -141,7 +140,7 @@
 
     function applyFakeLanguage() {
       const raw = document.getElementById('fake-language').value;
-      setText('BA01_Langue', raw);
+      setText('BA01_language', raw);
       const detected = window.NotiRxLanguage
         ? window.NotiRxLanguage.readPatientLanguage(document)
         : 'FR';
@@ -162,7 +161,7 @@
     }
 
     function clearPatient() {
-      ['BA01_LastName','BA01_FirstName','BA01_Info2','BA01_Langue'].forEach(id => setText(id, ''));
+      ['BA01_LastName','BA01_FirstName','BA01_Info2','BA01_language'].forEach(id => setText(id, ''));
       document.getElementById('preview-name').firstChild.textContent = 'Aucun patient chargé ';
       document.getElementById('preview-info').textContent = '';
       document.getElementById('preview-lang').textContent = '';
@@ -176,7 +175,7 @@
   <script>
     const PHONE = '5550100199';
     const f3Field = document.getElementById('priorx-f3-search');
-    const fallbackField = document.getElementById('PRIORX_SEARCH_FIELD_ID_UNCONFIRMED');
+    const fallbackField = document.getElementById('BA01_Keywords');
     const statusEl = document.getElementById('search-status');
     const logEl = document.getElementById('key-log');
     const ignoreBox = document.getElementById('ignore-synthetic');
@@ -252,7 +251,7 @@
       runSearch();
     });
 
-    const nipOverlay = document.getElementById('PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED');
+    const nipOverlay = document.getElementById('lockscreen');
     const mysteryLayer = document.getElementById('mystery-nip-layer');
     const fullCover = document.getElementById('full-cover');
     const loginEl = document.getElementById('LoginName1');

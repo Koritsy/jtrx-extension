@@ -4,12 +4,12 @@
 // while LoginName1 still holds the previous name. The widget must hide and
 // refuse every send until a signed-in user is visible again.
 //
-// PRIORX_LOCK_SELECTORS is NOT confirmed against the live lock screen. This
-// repository has no saved HTML for it. At the pharmacy, when the NIP box is
-// on screen: right-click it, choose Inspect, and add the overlay or PIN
-// input's id or class to this list (for example "#theIdFromInspect").
+// PRIORX_LOCK_SELECTORS was confirmed at the Beloeil pharmacy. The NIP screen
+// is <div id="lockscreen"> (all lowercase). HTML ids are case-sensitive, so
+// #lockScreen does not match. The widget locks while that element exists and
+// is visible.
 //
-// Until that id is known, these generic checks also lock the widget:
+// These checks also lock the widget:
 //   - LoginName1 missing, empty, or not visible
 //   - BA01_LastName missing, not visible, or covered by a large layer
 //   - a visible password field, or a visible field whose id/name/label says NIP
@@ -17,9 +17,8 @@
 //   - a large dialog, or a visible layer whose id/class looks like a lock
 // Fail closed: if the login field cannot be read, the session counts as locked.
 //
-// DEFAULT_IDLE_LOCK_MINUTES is a stand-in. Priorx's own NIP delay is not in
-// this repository. Options stores the value the pharmacy actually uses.
-// 10 minutes is the default until that number is confirmed.
+// DEFAULT_IDLE_LOCK_MINUTES is 5. Priorx's own NIP delay differs by pharmacy.
+// Options stores the value for this install (1 to 120). It is not sent to the server.
 
 (function (root, factory) {
   const api = factory();
@@ -29,22 +28,10 @@
   root.NotiRxLock = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const PRIORX_LOCK_SELECTORS = [
-    '#PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED',
-    '#priorx-nip-lock',
-    '#lockScreen',
-    '#LockScreen',
-    '#pnlLock',
-    '#divLock',
-    '#NIPDialog',
-    '#dlgNIP',
-    '#txtNIP',
-    '#txtPin',
-    '#userSwitch',
-    '#switchUser',
-    '[data-notirx-lock-screen]',
+    '#lockscreen',
   ];
 
-  const DEFAULT_IDLE_LOCK_MINUTES = 10;
+  const DEFAULT_IDLE_LOCK_MINUTES = 5;
   const MIN_IDLE_LOCK_MINUTES = 1;
   const MAX_IDLE_LOCK_MINUTES = 120;
   const LARGE_COVER_RATIO = 0.5;

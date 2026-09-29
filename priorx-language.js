@@ -1,15 +1,13 @@
 // Patient language on the Priorx file, next to the patient name.
 //
-// PRIORX_LANGUAGE_SELECTORS is NOT confirmed against the live patient file.
-// This repository has no saved HTML for the language box. At the pharmacy:
-// right-click the field that shows FR or EN next to the name, choose Inspect,
-// and add that element's id to this list (for example "#theIdFromInspect").
-// Do not copy the patient's name or phone number.
+// PRIORX_LANGUAGE_SELECTORS was confirmed at the Beloeil pharmacy:
+// <span id="BA01_language"> (lowercase L). HTML ids are case-sensitive, so
+// #BA01_Language does not match. The span's text is read.
 //
-// Until that id is known, these guesses are tried in order. An empty guess is
-// skipped. If none match, a small field next to BA01_LastName whose whole text
-// is FR or EN is used. Anything else, including a missing or unreadable field,
-// becomes FR. A send is never blocked because the language could not be read.
+// An empty span is skipped. A small field next to BA01_LastName whose whole
+// text is exactly FR or EN is the fallback. Anything else, including a missing
+// or unreadable field, becomes FR. A send is never blocked because the
+// language could not be read.
 //
 // The value sent to the server is only EN or FR. EN, ENG, ANGLAIS, and ENGLISH
 // (any capitalization, surrounding spaces ignored) become EN. The backend uses
@@ -23,18 +21,7 @@
   root.NotiRxLanguage = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const PRIORX_LANGUAGE_SELECTORS = [
-    '#BA01_Language',
-    '#BA01_Lang',
-    '#BA01_Langue',
-    '#BA01_LanguePatient',
-    '#BA01_PatientLanguage',
-    '#BA01_SpokenLanguage',
-    '#ddlLanguage',
-    '#ddlLangue',
-    '#cboLangue',
-    '#txtLangue',
-    '#txtLanguage',
-    '#PRIORX_LANGUAGE_FIELD_ID_UNCONFIRMED',
+    '#BA01_language',
   ];
 
   const ENGLISH_TOKENS = new Set(['EN', 'ENG', 'ANGLAIS', 'ENGLISH']);

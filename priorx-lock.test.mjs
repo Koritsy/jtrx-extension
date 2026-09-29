@@ -126,15 +126,17 @@ function signedIn(doc, props = {}) {
   return patient;
 }
 
-test('idle minutes stay inside 1 to 120 and default to 10', () => {
-  assert.equal(lock.DEFAULT_IDLE_LOCK_MINUTES, 10);
-  assert.equal(lock.normalizeIdleLockMinutes(10), 10);
+test('idle minutes stay inside 1 to 120 and default to 5', () => {
+  assert.equal(lock.DEFAULT_IDLE_LOCK_MINUTES, 5);
+  assert.deepEqual(lock.PRIORX_LOCK_SELECTORS, ['#lockscreen']);
+  assert.equal(lock.normalizeIdleLockMinutes(5), 5);
   assert.equal(lock.normalizeIdleLockMinutes('15'), 15);
-  assert.equal(lock.normalizeIdleLockMinutes(''), 10);
-  assert.equal(lock.normalizeIdleLockMinutes(0), 10);
-  assert.equal(lock.normalizeIdleLockMinutes(121), 10);
-  assert.equal(lock.normalizeIdleLockMinutes(10.5), 10);
-  assert.ok(lock.PRIORX_LOCK_SELECTORS.includes('#PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED'));
+  assert.equal(lock.normalizeIdleLockMinutes(''), 5);
+  assert.equal(lock.normalizeIdleLockMinutes(0), 5);
+  assert.equal(lock.normalizeIdleLockMinutes(121), 5);
+  assert.equal(lock.normalizeIdleLockMinutes(10.5), 5);
+  assert.equal(lock.PRIORX_LOCK_SELECTORS.includes('#lockScreen'), false);
+  assert.equal(lock.PRIORX_LOCK_SELECTORS.includes('#PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED'), false);
 });
 
 test('a visible signed-in patient file is not locked', () => {
@@ -171,19 +173,26 @@ test('a hidden patient name locks', () => {
   assert.equal(lock.assessPriorxSession(doc).reasons.includes('patient-hidden'), true);
 });
 
-test('the unconfirmed lock selector locks only while that element is visible', () => {
+test('#lockscreen locks only while that element is visible, and #lockScreen does not', () => {
   const doc = createDocument();
   signedIn(doc);
+  const wrongCase = doc.add({
+    id: 'lockScreen',
+    rect: { left: 0, top: 0, right: 80, bottom: 20, width: 80, height: 20 },
+  });
+  assert.equal(lock.assessPriorxSession(doc).reasons.includes('lock-selector'), false);
+
   const overlay = doc.add({
-    id: 'PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED',
+    id: 'lockscreen',
     hidden: true,
     rect: { left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800 },
   });
-  assert.equal(lock.assessPriorxSession(doc).locked, false);
+  assert.equal(lock.assessPriorxSession(doc).reasons.includes('lock-selector'), false);
   overlay.hidden = false;
+  wrongCase.hidden = true;
   const result = lock.assessPriorxSession(doc);
   assert.equal(result.reasons.includes('lock-selector'), true);
-  assert.equal(result.debug.matchedSelectors.includes('#PRIORX_LOCK_OVERLAY_ID_UNCONFIRMED'), true);
+  assert.deepEqual(result.debug.matchedSelectors, ['#lockscreen']);
 });
 
 test('a visible password field locks even without a known id', () => {

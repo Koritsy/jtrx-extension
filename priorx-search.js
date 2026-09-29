@@ -10,12 +10,10 @@
 // which would run a toggle shortcut twice.
 //
 // PRIORX_PATIENT_SEARCH_SELECTOR is the direct fallback when F3 does not reveal
-// a field. This repository has no saved Priorx HTML for that box, so the id
-// below is a placeholder. At the pharmacy: press F3, right-click the search
-// field, choose Inspect, and replace this selector with the field's id
-// (for example "#theIdFromInspect"). If the field sits in a frame, note which
-// frame. Until that id is confirmed, a click still fills an input that F3
-// focuses or newly shows. If neither happens, the number is copied.
+// a field. Confirmed at the Beloeil pharmacy: <input id="BA01_Keywords">.
+// A click still sends F3 first, then fills the field F3 focuses or newly shows,
+// then #BA01_Keywords. It does not press Enter. If neither field can be filled,
+// the number is copied.
 
 (function (root, factory) {
   const api = factory();
@@ -24,7 +22,7 @@
   }
   root.NotiRxSearch = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  const PRIORX_PATIENT_SEARCH_SELECTOR = '#PRIORX_SEARCH_FIELD_ID_UNCONFIRMED';
+  const PRIORX_PATIENT_SEARCH_SELECTOR = '#BA01_Keywords';
 
   const MESSAGE_TYPE_LABELS = {
     ready: 'commande prête',
@@ -266,8 +264,7 @@
   }
 
   function findSearchField(docs, selector, before) {
-    // A field F3 just focused is the best signal, including when Priorx ignores
-    // the unconfirmed selector below.
+    // A field F3 just focused is the best signal. #BA01_Keywords is the fallback.
     for (const doc of docs) {
       const active = doc.activeElement;
       if (isSearchCandidate(active) && !before.active.has(active)) return active;
@@ -279,8 +276,7 @@
       });
       if (found) return found;
     }
-    // Direct fallback: the selector Josi confirms at the pharmacy. The placeholder
-    // matches nothing on Priorx until that id is replaced.
+    // Direct fallback: the Priorx search input, id BA01_Keywords.
     for (const doc of docs) {
       const match = querySelector(doc, selector);
       if (isSearchCandidate(match)) return match;

@@ -194,12 +194,14 @@ test('a field that was already focused is not overwritten when F3 does nothing',
 
 test('the named selector is the fallback when F3 is ignored', async () => {
   const doc = createDocument();
-  const field = doc.addInput({ id: 'PRIORX_SEARCH_FIELD_ID_UNCONFIRMED' });
+  const field = doc.addInput({ id: 'BA01_Keywords' });
+  const wrongCase = doc.addInput({ id: 'BA01_keywords' });
   doc.addEventListener('keydown', () => {});
 
   const result = await search.openPatientSearch(doc, '5550100199', quietOptions());
 
-  assert.equal(search.PRIORX_PATIENT_SEARCH_SELECTOR, '#PRIORX_SEARCH_FIELD_ID_UNCONFIRMED');
+  assert.equal(search.PRIORX_PATIENT_SEARCH_SELECTOR, '#BA01_Keywords');
+  assert.equal(wrongCase.nativeValue || wrongCase.value || '', '');
   assert.equal(result.filled, true);
   assert.equal(field.nativeValue, '5550100199');
   assert.equal(field.events.some((event) => event.key === 'Enter'), false);

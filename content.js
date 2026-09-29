@@ -447,7 +447,7 @@
   let priorxWasLocked = false;
   let idleExpired = false;
   let lastActivityAt = Date.now();
-  let idleMinutes = Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 10;
+  let idleMinutes = Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 5;
   let lockDebug = false;
 
   function currentAssessment() {
@@ -939,7 +939,7 @@
     const info2     = document.getElementById('BA01_Info2')?.textContent?.trim() || '';
     const user      = document.getElementById('LoginName1')?.textContent?.trim() || '';
     const phoneRaw  = info2.split(' - ')[0].trim().replace(/\D/g, '');
-    // Ids are unconfirmed. PRIORX_LANGUAGE_SELECTORS lives in priorx-language.js.
+    // Confirmed id: #BA01_language in PRIORX_LANGUAGE_SELECTORS (priorx-language.js).
     // Missing or unreadable language becomes FR and does not block the send.
     const language = Lang ? Lang.readPatientLanguage(document) : 'FR';
     return { lastName, firstName, phoneRaw, user, language };
