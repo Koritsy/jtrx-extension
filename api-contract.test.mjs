@@ -89,15 +89,31 @@ test('consent save, notify, and confirmations use fixed paths', () => {
   }
 });
 
-test('dismiss puts only an opaque id in the path', () => {
-  const req = confirmationDismiss('conf-oui-100');
+test('dismiss encodes a backend confirmation id and rejects a raw hash', () => {
+  const id = '2026-09-30T21:58:12+00:00#a1b2c3d4';
+  const encoded = '/confirmations/2026-09-30T21%3A58%3A12%2B00%3A00%23a1b2c3d4/dismiss';
+  const req = confirmationDismiss(id);
   assert.equal(req.method, 'POST');
-  assert.equal(req.path, '/confirmations/conf-oui-100/dismiss');
+  assert.equal(req.path, encoded);
   assert.equal(req.body, null);
+  assert.equal(req.path.includes('#'), false);
+  assert.equal(req.path.includes('+'), false);
+  assert.equal(req.path.includes(PHONE), false);
   assertSafeRequest(req.method, req.path);
+  assertSafeRequest('POST', encoded);
+
+  assert.throws(() => assertSafeRequest('POST', `/confirmations/${id}/dismiss`), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('DELETE', encoded), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('GET', encoded), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('POST', '/confirmations/2026-09-30T21%3A58%3A12%2B00%3A00%23a1b2c3d4'), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('POST', '/confirmations/2026-09-30T21%3A58%3A12%2B00%3A00%2Fa1b2c3d4/dismiss'), /Blocked API path/);
+
   assert.throws(() => confirmationDismiss(''), /Invalid confirmation id/);
   assert.throws(() => confirmationDismiss('a/b'), /Invalid confirmation id/);
   assert.throws(() => confirmationDismiss('5550100199?x=1'), /Invalid confirmation id/);
+  assert.throws(() => confirmationDismiss('2026-09-30T21:58:12 +00:00#a1b2c3d4'), /Invalid confirmation id/);
+  assert.throws(() => confirmationDismiss('2026-09-30T21:58:12+00:00\\a1b2c3d4'), /Invalid confirmation id/);
+  assert.throws(() => confirmationDismiss('conf-oui-100'), /Invalid confirmation id/);
 });
 
 test('phone numbers in the URL are rejected', () => {
@@ -150,7 +166,7 @@ test('manifest grants storage, this Priorx host, and the API Gateway host', () =
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.3.1');
+  assert.equal(manifest.version, '1.3.2');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'priorx-search.js',
     'priorx-lock.js',
@@ -241,6 +257,15 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('chrome.runtime.id'), true);
   assert.equal(content.includes('Extension context invalidated'), true);
   assert.equal(content.includes('Appuyez sur F5'), true);
+  assert.equal(content.includes('width: 220px'), true);
+  assert.equal(content.includes('width: 260px'), false);
+  assert.equal(content.includes('padding: 12px 9px 9px'), true);
+  assert.equal(content.includes('padding-top: 8px'), true);
+  assert.equal(content.includes('item.confirmation_id'), true);
+  assert.equal(
+    content.includes("showToast(response?.error || 'Impossible de marquer cette réponse comme terminée.', 8000)"),
+    true,
+  );
   assert.equal((content.match(/chrome\.runtime\.sendMessage/g) || []).length, 1);
   assert.equal((content.match(/setInterval\(/g) || []).length, 1);
 

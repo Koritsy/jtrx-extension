@@ -16,12 +16,19 @@
 //   POST /confirmations/{confirmation_id}/dismiss
 //   POST /messages/history                        { phone_number }
 //
+// DismissConfirmation is POST /confirmations/{confirmation_id}/dismiss.
+// It is not DELETE /confirmations/{confirmation_id}. The id is the
+// confirmation_id field on each GET /confirmations item, not the phone.
+//
 // message_type is ready | partial | new_prescription | renewal.
 // patient_name is the patient's first name.
 // sent_by is the staff login from LoginName1. It is omitted when that field is empty.
 // language is EN or FR. EN only when the patient file says EN, ENG, ANGLAIS, or ENGLISH.
 // Anything else, including a missing field, is FR. An older server ignores language and sends French.
 // confirmation_id is the id returned by GET /confirmations, not a phone number.
+// Backend dismiss_confirmation accepts ^[0-9A-Za-z:+.\-]{20,40}#[0-9a-f]{8}$
+// for example 2026-09-30T21:58:12+00:00#a1b2c3d4. encodeURIComponent puts it in
+// the path (# → %23, + → %2B, : → %3A). A raw # in the path is rejected.
 //
 // Responses this extension reads:
 //   lookup:        consent, consent_date, needs_reinscription
@@ -90,9 +97,12 @@ export function confirmationsList() {
   return { method: 'GET', path: '/confirmations', body: null };
 }
 
+// Same rule as src/dismiss_confirmation/app.py in Koritsy/jtrx-backend.
+const CONFIRMATION_ID = /^[0-9A-Za-z:+.\-]{20,40}#[0-9a-f]{8}$/;
+
 export function confirmationDismiss(confirmationId) {
   const id = String(confirmationId ?? '').trim();
-  if (!id || /[/?#\\\s]/.test(id)) {
+  if (!CONFIRMATION_ID.test(id)) {
     throw new Error('Invalid confirmation id');
   }
   return {
@@ -121,7 +131,7 @@ export function assertSafeRequest(method, path) {
     } catch {
       throw new Error('Blocked API path');
     }
-    if (!id || /[/?#\\\s]/.test(id)) throw new Error('Blocked API path');
+    if (!CONFIRMATION_ID.test(id)) throw new Error('Blocked API path');
     return;
   }
 

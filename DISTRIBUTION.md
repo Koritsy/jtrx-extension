@@ -41,7 +41,7 @@ Do not write that the extension encrypts data itself, that texts stay in Canada,
 
 ## Version
 
-The manifest version is **1.3.1**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy. After an update, press F5 on the Priorx tab.
+The manifest version is **1.3.2**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy. After an update, press F5 on the Priorx tab.
 
 ## Icons
 
@@ -55,7 +55,7 @@ From the extension folder:
 sh scripts/pack-extension.sh
 ```
 
-The script stops unless `content_scripts.matches` is exactly `https://4502812786.priorx.ca/*` and `host_permissions` is that host plus `https://*.execute-api.ca-central-1.amazonaws.com/*`. It writes `dist/notirx-1.3.1.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
+The script stops unless `content_scripts.matches` is exactly `https://4502812786.priorx.ca/*` and `host_permissions` is that host plus `https://*.execute-api.ca-central-1.amazonaws.com/*`. It writes `dist/notirx-1.3.2.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
 
 The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `priorx-language.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
 
