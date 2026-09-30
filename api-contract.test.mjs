@@ -133,12 +133,14 @@ function chromeMatch(pattern, href) {
   return pathRe.test(url.pathname);
 }
 
-test('manifest grants only storage and one Priorx HTTPS match', () => {
+test('manifest grants storage, this Priorx host, and the API Gateway host', () => {
   const manifest = JSON.parse(readFileSync(new URL('./manifest.json', import.meta.url), 'utf8'));
   const pattern = 'https://4502812786.priorx.ca/*';
+  const apiHost = 'https://*.execute-api.ca-central-1.amazonaws.com/*';
   const patientFile = 'https://4502812786.priorx.ca/4502812786.Web/index.aspx?w=Priorx04&c=fr-CA';
   assert.deepEqual(manifest.permissions, ['storage']);
-  assert.deepEqual(manifest.host_permissions, [pattern]);
+  assert.deepEqual(manifest.host_permissions, [pattern, apiHost]);
+  assert.equal(manifest.optional_host_permissions, undefined);
   assert.deepEqual(manifest.content_scripts[0].matches, [pattern]);
   assert.equal(chromeMatch(pattern, patientFile), true);
   assert.equal(chromeMatch(pattern, 'https://9995550100.priorx.ca/9995550100.Web/index.aspx'), false);
@@ -148,7 +150,7 @@ test('manifest grants only storage and one Priorx HTTPS match', () => {
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.3.0');
+  assert.equal(manifest.version, '1.3.1');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'priorx-search.js',
     'priorx-lock.js',
@@ -168,6 +170,47 @@ test('manifest grants only storage and one Priorx HTTPS match', () => {
       pngSize(readFileSync(new URL(`./icons/icon${size}.png`, import.meta.url))),
       [Number(size), Number(size)],
     );
+  }
+});
+
+function defaultApiBaseUrl() {
+  const options = readFileSync(new URL('./options.html', import.meta.url), 'utf8');
+  const schema = JSON.parse(readFileSync(new URL('./managed_schema.json', import.meta.url), 'utf8'));
+  const fromOptions = options.match(/placeholder="(https:\/\/[^"]+)"/);
+  const fromSchema = String(schema.properties.apiBaseUrl.description).match(/https:\/\/\S+/);
+  assert.ok(fromOptions, 'options page should show the default API URL');
+  assert.ok(fromSchema, 'managed schema should show the default API URL');
+  assert.equal(fromOptions[1], fromSchema[0]);
+  return fromOptions[1].replace(/\/+$/, '');
+}
+
+test('manifest host_permissions cover the default API host', () => {
+  const manifest = JSON.parse(readFileSync(new URL('./manifest.json', import.meta.url), 'utf8'));
+  const background = readFileSync(new URL('./background.js', import.meta.url), 'utf8');
+  assert.equal(background.includes('${apiBaseUrl}${path}'), true);
+
+  const apiBaseUrl = defaultApiBaseUrl();
+  const hosts = manifest.host_permissions;
+  const covered = (href) => hosts.some((pattern) => chromeMatch(pattern, href));
+  for (const req of [
+    consentLookup(PHONE),
+    messagesHistory(PHONE),
+    confirmationsList(),
+  ]) {
+    const href = `${apiBaseUrl}${req.path}`;
+    assert.equal(covered(href), true, href);
+  }
+
+  // Another API Gateway id in the same region. Fake id only.
+  const other = 'https://exampleid.execute-api.ca-central-1.amazonaws.com/prod/consent/lookup';
+  assert.equal(covered(other), true, other);
+
+  for (const href of [
+    'https://exampleid.execute-api.us-east-1.amazonaws.com/prod/consent/lookup',
+    'https://exampleid.s3.ca-central-1.amazonaws.com/prod/consent/lookup',
+    'https://example.example/prod/consent/lookup',
+  ]) {
+    assert.equal(covered(href), false, href);
   }
 });
 
@@ -195,6 +238,11 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('lang-badge'), true);
   assert.equal(content.includes('readPatientLanguage'), true);
   assert.equal(content.includes('PRIORX_LANGUAGE_SELECTORS'), true);
+  assert.equal(content.includes('chrome.runtime.id'), true);
+  assert.equal(content.includes('Extension context invalidated'), true);
+  assert.equal(content.includes('Appuyez sur F5'), true);
+  assert.equal((content.match(/chrome\.runtime\.sendMessage/g) || []).length, 1);
+  assert.equal((content.match(/setInterval\(/g) || []).length, 1);
 
   assert.equal(background.includes('sentBy: patient.user'), true);
   assert.equal(background.includes('language: messageLanguage(msgPatient, patient)'), true);

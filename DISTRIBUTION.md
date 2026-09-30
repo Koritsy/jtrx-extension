@@ -6,11 +6,15 @@ Today the extension is copied on a USB stick and loaded unpacked in developer mo
 
 ## This store’s Priorx host
 
-This package is limited to one host, written twice in `manifest.json` (`host_permissions` and `content_scripts.matches`):
+The content script is limited to one host, written in `manifest.json` as `content_scripts.matches` and again in `host_permissions`:
 
 `https://4502812786.priorx.ca/*`
 
-That covers the patient file at `https://4502812786.priorx.ca/4502812786.Web/index.aspx`. The widget still reads the same element ids (`BA01_LastName`, `BA01_FirstName`, `BA01_Info2`, `LoginName1`). The `/4502812786.Web/` folder does not change those ids. Pages on this host without `BA01_LastName` do not show the widget.
+`host_permissions` also includes the API Gateway host the background script calls:
+
+`https://*.execute-api.ca-central-1.amazonaws.com/*`
+
+That Priorx line covers the patient file at `https://4502812786.priorx.ca/4502812786.Web/index.aspx`. The widget still reads the same element ids (`BA01_LastName`, `BA01_FirstName`, `BA01_Info2`, `LoginName1`). The `/4502812786.Web/` folder does not change those ids. Pages on this host without `BA01_LastName` do not show the widget. The API line is not a content-script match. It only lets the service worker reach API Gateway in ca-central-1 without a CORS preflight. A custom API address on another host is not included.
 
 Each store has its own subdomain under `priorx.ca`, and the subdomain is that store’s phone number. Another store needs its own exact host added in both manifest lists, for example `https://<that-store-phone>.priorx.ca/*`, then a new version. Do not replace this with `https://*.priorx.ca/*`.
 
@@ -37,7 +41,7 @@ Do not write that the extension encrypts data itself, that texts stay in Canada,
 
 ## Version
 
-The manifest version is **1.3.0**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy.
+The manifest version is **1.3.1**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy. After an update, press F5 on the Priorx tab.
 
 ## Icons
 
@@ -51,7 +55,7 @@ From the extension folder:
 sh scripts/pack-extension.sh
 ```
 
-The script stops unless both match patterns are exactly `https://4502812786.priorx.ca/*`. It writes `dist/notirx-1.3.0.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
+The script stops unless `content_scripts.matches` is exactly `https://4502812786.priorx.ca/*` and `host_permissions` is that host plus `https://*.execute-api.ca-central-1.amazonaws.com/*`. It writes `dist/notirx-1.3.1.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
 
 The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `priorx-language.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
 
@@ -75,7 +79,8 @@ Text for the permission boxes:
 
 - **Single purpose:** Lets pharmacy staff send one of four text messages about the prescription that is open in Priorx, shows patients who replied OUI, and shows the texts already sent for the open file.
 - **storage:** Saves the API address and API key typed on the Options page in this browser, or reads those two values when an administrator sets them by policy.
-- **Host permission:** Runs only on `https://4502812786.priorx.ca`. The widget reads the name, phone, language (FR or EN), and signed-in staff name when those fields are on the page (the patient file under `/4502812786.Web/`). Another store is a different subdomain and is not included.
+- **Host permission (Priorx):** Runs only on `https://4502812786.priorx.ca`. The widget reads the name, phone, language (FR or EN), and signed-in staff name when those fields are on the page (the patient file under `/4502812786.Web/`). Another store is a different subdomain and is not included.
+- **Host permission (API):** Calls the NotiRx API on `https://*.execute-api.ca-central-1.amazonaws.com`. That is API Gateway in Canada (ca-central-1) only. It does not cover other AWS hosts or a custom API address.
 
 Data to declare in the privacy questions: phone number, patient first name, staff name when consent is saved and when a text is confirmed, which of the four messages was chosen, and whether the text is French or English (`FR` or `EN` only). The last name stays on the computer. The extension does not collect account passwords or browsing history.
 

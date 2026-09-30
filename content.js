@@ -494,6 +494,105 @@
     if (histEmpty) histEmpty.textContent = '';
   }
 
+  // After Reload on chrome://extensions, this content script keeps running but
+  // chrome.runtime.id becomes undefined. sendMessage then throws
+  // "Extension context invalidated". Stop the timers and tell the pharmacist
+  // to press F5. Do not leave an uncaught error on the page.
+  let backgroundTimers = [];
+  let contextInvalidated = false;
+
+  function extensionContextAlive() {
+    try {
+      return Boolean(chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
+    }
+  }
+
+  function stopBackgroundTimers() {
+    for (const timer of backgroundTimers) clearInterval(timer);
+    backgroundTimers = [];
+  }
+
+  function noteContextInvalidated() {
+    if (contextInvalidated) return;
+    contextInvalidated = true;
+    stopBackgroundTimers();
+    console.info('[NotiRx] Extension rechargée. Appuyez sur F5.');
+    try {
+      clearTimeout(toastTimer);
+      const toast = $('toast');
+      if (!toast || host.hidden) return;
+      toast.textContent = 'NotiRx a été rechargé. Appuyez sur F5 pour continuer.';
+      toast.classList.remove('hidden');
+    } catch {
+      // The page may be going away. Stopping the timers is enough.
+    }
+  }
+
+  function invalidatedMessage(err) {
+    return String(err && err.message || err).includes('Extension context invalidated');
+  }
+
+  function sendToBackground(message, callback) {
+    if (!extensionContextAlive()) {
+      noteContextInvalidated();
+      return;
+    }
+    try {
+      const pending = chrome.runtime.sendMessage(message, (response) => {
+        if (!extensionContextAlive()) {
+          noteContextInvalidated();
+          return;
+        }
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          if (invalidatedMessage(runtimeError)) {
+            noteContextInvalidated();
+            return;
+          }
+          if (typeof callback === 'function') callback(undefined);
+          return;
+        }
+        if (typeof callback === 'function') callback(response);
+      });
+      if (pending && typeof pending.catch === 'function') {
+        pending.catch((err) => {
+          if (!extensionContextAlive() || invalidatedMessage(err)) noteContextInvalidated();
+        });
+      }
+    } catch (err) {
+      if (!extensionContextAlive() || invalidatedMessage(err)) {
+        noteContextInvalidated();
+        return;
+      }
+      throw err;
+    }
+  }
+
+  function every(fn, ms) {
+    if (contextInvalidated || !extensionContextAlive()) {
+      noteContextInvalidated();
+      return;
+    }
+    const timer = setInterval(() => {
+      if (!extensionContextAlive()) {
+        noteContextInvalidated();
+        return;
+      }
+      try {
+        fn();
+      } catch (err) {
+        if (!extensionContextAlive() || invalidatedMessage(err)) {
+          noteContextInvalidated();
+          return;
+        }
+        throw err;
+      }
+    }, ms);
+    backgroundTimers.push(timer);
+  }
+
   function enterLocked() {
     widgetLocked = true;
     host.hidden = true;
@@ -501,7 +600,7 @@
     panel.classList.remove('open');
     clearSensitiveUi();
     currentPatient = null;
-    chrome.runtime.sendMessage({ type: 'PATIENT_CLEARED' });
+    sendToBackground({ type: 'PATIENT_CLEARED' });
   }
 
   function leaveLocked() {
@@ -584,7 +683,7 @@
       $('conf-badge').classList.add('hidden');
       return;
     }
-    chrome.runtime.sendMessage({ type: 'CONFIRMATIONS_LIST', priorxUnlocked: true }, response => {
+    sendToBackground({ type: 'CONFIRMATIONS_LIST', priorxUnlocked: true }, response => {
       if (!response?.ok) {
         $('conf-list').replaceChildren();
         $('conf-badge').classList.add('hidden');
@@ -687,7 +786,7 @@
 
   function dismissConfirmation(confirmationId) {
     if (!sessionAllowsAction()) return;
-    chrome.runtime.sendMessage({ type: 'CONFIRMATION_DISMISS', confirmationId, priorxUnlocked: true }, response => {
+    sendToBackground({ type: 'CONFIRMATION_DISMISS', confirmationId, priorxUnlocked: true }, response => {
       if (response?.ok) fetchConfirmations();
       else showToast('Impossible de marquer cette réponse comme terminée.');
     });
@@ -722,7 +821,7 @@
 
     empty.textContent = 'Chargement…';
     empty.classList.remove('hidden');
-    chrome.runtime.sendMessage({ type: 'MESSAGES_HISTORY', phoneNumber: digits, priorxUnlocked: true }, response => {
+    sendToBackground({ type: 'MESSAGES_HISTORY', phoneNumber: digits, priorxUnlocked: true }, response => {
       if (requestId !== historyRequest) return;
       renderHistory(response);
     });
@@ -772,11 +871,11 @@
     });
   }
 
-  setInterval(() => {
+  every(() => {
     if (Date.now() - lastActivityAt >= idleMinutes * 60 * 1000) idleExpired = true;
     enforceLock();
   }, 5000);
-  setInterval(fetchConfirmations, 20000);
+  every(fetchConfirmations, 20000);
 
   // ── Messages from background ───────────────────────────────────────────────
 
@@ -804,7 +903,7 @@
         resetNotify();
         if (msg.consentRevoked) {
           if (sessionAllowsAction()) {
-            chrome.runtime.sendMessage({ type: 'RETRY_PATIENT', patient: currentPatient, priorxUnlocked: true });
+            sendToBackground({ type: 'RETRY_PATIENT', patient: currentPatient, priorxUnlocked: true });
           }
         } else {
           $('err-msg').textContent = msg.error || '';
@@ -880,7 +979,7 @@
       };
       setLanguageBadge(currentPatient.language);
     }
-    chrome.runtime.sendMessage({
+    sendToBackground({
       type: 'NOTIFY_SEND',
       patient: currentPatient,
       messageType: pendingNotifyType,
@@ -907,17 +1006,17 @@
 
   $('btn-retry').addEventListener('click', () => {
     showView('loading');
-    chrome.runtime.sendMessage({ type: 'RETRY_PATIENT' });
+    sendToBackground({ type: 'RETRY_PATIENT' });
   });
 
   $('btn-options').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
+    sendToBackground({ type: 'OPEN_OPTIONS' });
   });
 
   function saveConsent(consent) {
     if (!sessionAllowsAction()) return;
     showView('loading'); setDot('');
-    chrome.runtime.sendMessage({
+    sendToBackground({
       type: 'CONSENT_SAVE',
       priorxUnlocked: true,
       data: { consent, recordedBy: currentPatient?.user || 'unknown', patient: currentPatient },
@@ -953,7 +1052,7 @@
     const patient = readPatientFromDOM();
     if (!patient.lastName && !patient.firstName) {
       currentPatient = null;
-      chrome.runtime.sendMessage({ type: 'PATIENT_CLEARED' });
+      sendToBackground({ type: 'PATIENT_CLEARED' });
       fetchHistory('');
       return;
     }
@@ -970,7 +1069,7 @@
       return;
     }
     currentPatient = patient;
-    chrome.runtime.sendMessage({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
+    sendToBackground({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
     fetchHistory(patient.phoneRaw);
   }
 

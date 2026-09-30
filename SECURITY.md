@@ -11,16 +11,19 @@ The manifest asks for:
 | Permission | Why it is there |
 |---|---|
 | `storage` | The API address and the API key are typed on the extension’s Options page and saved in this browser profile (`chrome.storage.local`). If an administrator has set those two values by enterprise policy, the extension reads them from `chrome.storage.managed` instead. |
-| One host permission | `https://4502812786.priorx.ca/*` — this pharmacy’s Priorx site, HTTPS only. |
-| The same pattern as a content script | That is what draws the widget. |
+| Priorx host | `https://4502812786.priorx.ca/*` — this pharmacy’s Priorx site, HTTPS only. |
+| API Gateway host | `https://*.execute-api.ca-central-1.amazonaws.com/*` — the NotiRx API in ca-central-1. A host permission lets the background script call that API without a CORS preflight. The pattern is only that API Gateway hostname, not all of amazonaws.com. |
+| The Priorx pattern as a content script | That is what draws the widget. The API host is not a content-script match. |
 
 `storage` is required for the Options page. `alarms` was declared before and never used; it is removed.
 
-The host pattern is written twice in `manifest.json` (`host_permissions` and `content_scripts.matches`) because Chrome keeps those as two fields. Both are `https://4502812786.priorx.ca/*`. There is no `*.priorx.ca` wildcard. Each store has its own subdomain (the store phone number). Another store needs its own exact `https://<phone>.priorx.ca/*` line added in both places, then a new version of the extension.
+The Priorx host is written in `manifest.json` twice (`host_permissions` and `content_scripts.matches`) because Chrome keeps those as two fields. Both Priorx lines are `https://4502812786.priorx.ca/*`. There is no `*.priorx.ca` wildcard. Each store has its own subdomain (the store phone number). Another store needs its own exact `https://<phone>.priorx.ca/*` line added in both places, then a new version of the extension. `host_permissions` also lists the API Gateway host above. That second line is not copied into `content_scripts.matches`.
 
 The patient file for this store is `https://4502812786.priorx.ca/4502812786.Web/index.aspx`. The content script matches the whole host, then looks for element ids on that page. Those ids are not tied to the `/4502812786.Web/` folder. On any other page of this host that does not contain `BA01_LastName`, the script returns without drawing the widget.
 
-The extension does not request a host permission for the API. Calls to the API are normal HTTPS requests from the background script. That works while the API answers browser calls (today, cross-origin access is open). If that is tightened later, allow the extension’s origin, or add that exact API host under `host_permissions`.
+The background script calls `fetch` on the API base URL from Options or enterprise policy. Without a host permission, Chrome treats that call as cross-origin from `chrome-extension://…` and requires `Access-Control-Allow-Origin`. The API allows the Priorx site, not the extension origin, so those calls fail in the browser (`failed to fetch`). The API Gateway host permission makes calls to `*.execute-api.ca-central-1.amazonaws.com` exempt from that check.
+
+Options and policy still accept any https URL. A base URL on another host (another region, or a host that is not this API Gateway) is not in `host_permissions`. That call stays subject to CORS and will fail. This copy does not request `optional_host_permissions` or `https://*/*`. Use the ca-central-1 API Gateway URL. The Options page says so when the saved address is on another host. A different host needs its own line in `host_permissions` in a new version.
 
 ## What the extension reads on the page
 
@@ -85,7 +88,7 @@ Do not commit the key, and do not put it in `manifest.json`.
 The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
 1. Copy this folder to the pharmacy computer. Do not copy a `config.js`. The manifest is already limited to `https://4502812786.priorx.ca/*`.
-2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.0**.
+2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.1**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
 3. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
 4. Reload the Priorx tab and open a patient file (`/4502812786.Web/index.aspx`). The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. Patients who replied OUI are on the **Réponses** tab. Texts for the open file are on the **Historique** tab.
 

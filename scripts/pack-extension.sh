@@ -7,11 +7,17 @@ cd "$(dirname "$0")/.."
 python3 - <<'PY'
 import json, sys
 manifest = json.load(open("manifest.json"))
-expected = "https://4502812786.priorx.ca/*"
+priorx = "https://4502812786.priorx.ca/*"
+api = "https://*.execute-api.ca-central-1.amazonaws.com/*"
 hosts = manifest.get("host_permissions")
 matches = manifest.get("content_scripts", [{}])[0].get("matches")
-if hosts != [expected] or matches != [expected]:
-    sys.exit("manifest.json must match only https://4502812786.priorx.ca/* (no *.priorx.ca).")
+if matches != [priorx]:
+    sys.exit("content_scripts.matches must be only https://4502812786.priorx.ca/* (no *.priorx.ca).")
+if hosts != [priorx, api]:
+    sys.exit(
+        "host_permissions must be this Priorx host plus "
+        "https://*.execute-api.ca-central-1.amazonaws.com/*."
+    )
 if "*.priorx.ca" in json.dumps(manifest):
     sys.exit("Refusing a wildcard across priorx.ca.")
 PY
