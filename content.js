@@ -31,7 +31,8 @@
       #root { display: flex; align-items: flex-start; }
 
       #panel {
-        width: 260px;
+        width: 220px;
+        padding-top: 8px;
         background: #fff;
         border: 1px solid #ddd;
         border-right: none;
@@ -74,7 +75,7 @@
         transform: rotate(180deg);
       }
 
-      .view { display: none; padding: 9px; }
+      .view { display: none; padding: 12px 9px 9px; }
       .view.active { display: block; }
 
       .name-row {
@@ -105,7 +106,9 @@
         width: 100%; padding: 6px 8px;
         border: none; border-radius: 6px;
         font-size: 12px; font-weight: 500;
+        line-height: 1.25;
         cursor: pointer; margin-bottom: 4px;
+        white-space: normal;
       }
       .btn:last-child { margin-bottom: 0; }
       .btn:hover { opacity: .88; }
@@ -150,11 +153,12 @@
       #nav-row {
         display: flex;
         border-bottom: 1px solid #eee;
-        margin: -9px -9px 8px;
-        padding: 0 4px;
+        margin: 0 0 8px;
+        padding: 0 2px;
       }
       .nav-btn {
-        flex: 1;
+        flex: 1 1 0;
+        min-width: 0;
         background: none;
         border: none;
         padding: 6px 2px;
@@ -166,8 +170,9 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 4px;
+        gap: 3px;
         white-space: nowrap;
+        overflow: hidden;
       }
       .nav-btn.active { color: #1565c0; border-bottom-color: #1565c0; }
       .conf-badge {
@@ -188,9 +193,9 @@
       }
       .conf-item.clickable .conf-open { cursor: pointer; }
       .conf-open-static { cursor: default; }
-      .conf-name { font-weight: 600; font-size: 11px; }
-      .conf-type { color: #1565c0; font-size: 10px; margin-top: 1px; line-height: 1.3; }
-      .conf-time { color: #9e9e9e; font-size: 9px; margin-top: 1px; }
+      .conf-name { font-weight: 600; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .conf-type { color: #1565c0; font-size: 10px; margin-top: 1px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .conf-time { color: #9e9e9e; font-size: 9px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #conf-list, #hist-list { max-height: 320px; overflow: auto; }
       .btn-done {
         background: #e8f5e9; color: #2e7d32; border: none;
@@ -199,10 +204,11 @@
       }
       .toast {
         position: fixed; right: 12px; bottom: 12px;
-        max-width: 240px;
+        max-width: 340px;
         background: #1a237e; color: #fff;
         border-radius: 8px; padding: 8px 10px;
         font-size: 12px; line-height: 1.35;
+        overflow-wrap: anywhere;
         box-shadow: 0 2px 10px rgba(0,0,0,.22);
       }
     </style>
@@ -405,12 +411,12 @@
   const Search = globalThis.NotiRxSearch;
   let toastTimer = 0;
 
-  function showToast(message) {
+  function showToast(message, durationMs = 4500) {
     const toast = $('toast');
     toast.textContent = message;
     toast.classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.add('hidden'), 4500);
+    toastTimer = setTimeout(() => toast.classList.add('hidden'), durationMs);
   }
 
   function setActiveTab(name) {
@@ -551,7 +557,9 @@
             noteContextInvalidated();
             return;
           }
-          if (typeof callback === 'function') callback(undefined);
+          if (typeof callback === 'function') {
+            callback({ ok: false, error: runtimeError.message || 'Extension error' });
+          }
           return;
         }
         if (typeof callback === 'function') callback(response);
@@ -757,8 +765,8 @@
       done.type = 'button';
       done.className = 'btn-done';
       done.textContent = 'Fait';
-      const confirmationId = item.confirmation_id == null ? '' : String(item.confirmation_id);
-      done.addEventListener('click', () => dismissConfirmation(confirmationId));
+      const confirmationId = item.confirmation_id == null ? '' : String(item.confirmation_id).trim();
+      done.addEventListener('click', () => dismissConfirmation(confirmationId, item));
 
       row.append(text, done);
       listEl.appendChild(row);
@@ -784,11 +792,22 @@
     showToast('Impossible de placer le numéro. Appuyez sur F3, puis collez-le.');
   }
 
-  function dismissConfirmation(confirmationId) {
+  function dismissConfirmation(confirmationId, item) {
     if (!sessionAllowsAction()) return;
-    sendToBackground({ type: 'CONFIRMATION_DISMISS', confirmationId, priorxUnlocked: true }, response => {
+    const id = String(confirmationId ?? '').trim();
+    if (!id) {
+      const fields = item && typeof item === 'object'
+        ? Object.keys(item).sort().join(', ')
+        : '';
+      showToast(
+        fields ? `Invalid confirmation id (fields: ${fields})` : 'Invalid confirmation id',
+        8000,
+      );
+      return;
+    }
+    sendToBackground({ type: 'CONFIRMATION_DISMISS', confirmationId: id, priorxUnlocked: true }, response => {
       if (response?.ok) fetchConfirmations();
-      else showToast('Impossible de marquer cette réponse comme terminée.');
+      else showToast(response?.error || 'Impossible de marquer cette réponse comme terminée.', 8000);
     });
   }
 

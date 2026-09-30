@@ -16,6 +16,10 @@
 //   POST /confirmations/{confirmation_id}/dismiss
 //   POST /messages/history                        { phone_number }
 //
+// DismissConfirmation is POST /confirmations/{confirmation_id}/dismiss.
+// It is not DELETE /confirmations/{confirmation_id}. The id is the
+// confirmation_id field on each GET /confirmations item, not the phone.
+//
 // message_type is ready | partial | new_prescription | renewal.
 // patient_name is the patient's first name.
 // sent_by is the staff login from LoginName1. It is omitted when that field is empty.

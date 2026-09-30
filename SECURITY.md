@@ -88,7 +88,7 @@ Do not commit the key, and do not put it in `manifest.json`.
 The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
 1. Copy this folder to the pharmacy computer. Do not copy a `config.js`. The manifest is already limited to `https://4502812786.priorx.ca/*`.
-2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.1**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
+2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.2**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
 3. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
 4. Reload the Priorx tab and open a patient file (`/4502812786.Web/index.aspx`). The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. Patients who replied OUI are on the **Réponses** tab. Texts for the open file are on the **Historique** tab.
 

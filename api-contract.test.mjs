@@ -100,6 +100,22 @@ test('dismiss puts only an opaque id in the path', () => {
   assert.throws(() => confirmationDismiss('5550100199?x=1'), /Invalid confirmation id/);
 });
 
+// Koritsy/jtrx-backend DismissConfirmation route. The live API Gateway
+// accepts this method and path. DELETE /confirmations/{id} is not that route.
+test('dismiss path and method match the backend DismissConfirmation route', () => {
+  const id = 'conf-oui-100';
+  const req = confirmationDismiss(id);
+  assert.equal(req.method, 'POST');
+  assert.equal(req.path, `/confirmations/${id}/dismiss`);
+  assert.equal(req.body, null);
+  assert.equal(req.path.includes(PHONE), false);
+  assertSafeRequest('POST', `/confirmations/${id}/dismiss`);
+  assert.throws(() => assertSafeRequest('DELETE', `/confirmations/${id}`), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('DELETE', `/confirmations/${id}/dismiss`), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('POST', `/confirmations/${id}`), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('GET', `/confirmations/${id}/dismiss`), /Blocked API path/);
+});
+
 test('phone numbers in the URL are rejected', () => {
   assert.throws(() => assertSafeRequest('GET', `/consent/${PHONE}`), /Blocked API path/);
   assert.throws(() => assertSafeRequest('POST', `/consent/lookup?phone_number=${PHONE}`), /Blocked API path/);
@@ -150,7 +166,7 @@ test('manifest grants storage, this Priorx host, and the API Gateway host', () =
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.3.1');
+  assert.equal(manifest.version, '1.3.2');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'priorx-search.js',
     'priorx-lock.js',
@@ -241,6 +257,15 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('chrome.runtime.id'), true);
   assert.equal(content.includes('Extension context invalidated'), true);
   assert.equal(content.includes('Appuyez sur F5'), true);
+  assert.equal(content.includes('width: 220px'), true);
+  assert.equal(content.includes('width: 260px'), false);
+  assert.equal(content.includes('padding: 12px 9px 9px'), true);
+  assert.equal(content.includes('padding-top: 8px'), true);
+  assert.equal(content.includes('item.confirmation_id'), true);
+  assert.equal(
+    content.includes("showToast(response?.error || 'Impossible de marquer cette réponse comme terminée.', 8000)"),
+    true,
+  );
   assert.equal((content.match(/chrome\.runtime\.sendMessage/g) || []).length, 1);
   assert.equal((content.match(/setInterval\(/g) || []).length, 1);
 
