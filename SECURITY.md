@@ -62,7 +62,7 @@ The phone number is the JSON field `phone_number`. It is not part of the web add
 
 `message_type` is one of `ready`, `partial`, `new_prescription`, `renewal`.
 
-`confirmation_id` is the id returned by the OUI list. The list is drawn with text nodes, so a name or an id from the server is shown as text.
+`confirmation_id` is the id returned by the OUI list. It looks like `2026-09-30T21:58:12+00:00#a1b2c3d4`. The `#` is sent as `%23` in the path, so it is not a URL fragment. The list is drawn with text nodes, so a name or an id from the server is shown as text.
 
 Replies the widget reads: `consent`, `consent_date`, `needs_reinscription`, `message_sid`, and `confirmations` (each item: `confirmation_id`, `patient_name`, `replied_at`, plus `phone_number` and `message_type` when the server sends them). A row without `phone_number` stays in the list and cannot be clicked to search. Historique reads `messages` (each item: `message_type`, `sent_at`, `sent_by`, `status`, and optionally `direction` and `reply_keyword`). If that path answers 404, the Historique tab shows a French notice and the rest of the widget keeps working.
 

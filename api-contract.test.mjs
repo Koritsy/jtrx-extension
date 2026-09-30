@@ -89,31 +89,31 @@ test('consent save, notify, and confirmations use fixed paths', () => {
   }
 });
 
-test('dismiss puts only an opaque id in the path', () => {
-  const req = confirmationDismiss('conf-oui-100');
+test('dismiss encodes a backend confirmation id and rejects a raw hash', () => {
+  const id = '2026-09-30T21:58:12+00:00#a1b2c3d4';
+  const encoded = '/confirmations/2026-09-30T21%3A58%3A12%2B00%3A00%23a1b2c3d4/dismiss';
+  const req = confirmationDismiss(id);
   assert.equal(req.method, 'POST');
-  assert.equal(req.path, '/confirmations/conf-oui-100/dismiss');
+  assert.equal(req.path, encoded);
   assert.equal(req.body, null);
+  assert.equal(req.path.includes('#'), false);
+  assert.equal(req.path.includes('+'), false);
+  assert.equal(req.path.includes(PHONE), false);
   assertSafeRequest(req.method, req.path);
+  assertSafeRequest('POST', encoded);
+
+  assert.throws(() => assertSafeRequest('POST', `/confirmations/${id}/dismiss`), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('DELETE', encoded), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('GET', encoded), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('POST', '/confirmations/2026-09-30T21%3A58%3A12%2B00%3A00%23a1b2c3d4'), /Blocked API path/);
+  assert.throws(() => assertSafeRequest('POST', '/confirmations/2026-09-30T21%3A58%3A12%2B00%3A00%2Fa1b2c3d4/dismiss'), /Blocked API path/);
+
   assert.throws(() => confirmationDismiss(''), /Invalid confirmation id/);
   assert.throws(() => confirmationDismiss('a/b'), /Invalid confirmation id/);
   assert.throws(() => confirmationDismiss('5550100199?x=1'), /Invalid confirmation id/);
-});
-
-// Koritsy/jtrx-backend DismissConfirmation route. The live API Gateway
-// accepts this method and path. DELETE /confirmations/{id} is not that route.
-test('dismiss path and method match the backend DismissConfirmation route', () => {
-  const id = 'conf-oui-100';
-  const req = confirmationDismiss(id);
-  assert.equal(req.method, 'POST');
-  assert.equal(req.path, `/confirmations/${id}/dismiss`);
-  assert.equal(req.body, null);
-  assert.equal(req.path.includes(PHONE), false);
-  assertSafeRequest('POST', `/confirmations/${id}/dismiss`);
-  assert.throws(() => assertSafeRequest('DELETE', `/confirmations/${id}`), /Blocked API path/);
-  assert.throws(() => assertSafeRequest('DELETE', `/confirmations/${id}/dismiss`), /Blocked API path/);
-  assert.throws(() => assertSafeRequest('POST', `/confirmations/${id}`), /Blocked API path/);
-  assert.throws(() => assertSafeRequest('GET', `/confirmations/${id}/dismiss`), /Blocked API path/);
+  assert.throws(() => confirmationDismiss('2026-09-30T21:58:12 +00:00#a1b2c3d4'), /Invalid confirmation id/);
+  assert.throws(() => confirmationDismiss('2026-09-30T21:58:12+00:00\\a1b2c3d4'), /Invalid confirmation id/);
+  assert.throws(() => confirmationDismiss('conf-oui-100'), /Invalid confirmation id/);
 });
 
 test('phone numbers in the URL are rejected', () => {
