@@ -164,7 +164,12 @@ async function handlePatientChanged(tabId, patient) {
       needsReinscription: result.needs_reinscription || false,
     });
   } catch (err) {
-    broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'ERROR', error: err.message });
+    broadcastToPanel(tabId, {
+      type: 'STATE_UPDATE',
+      state: 'ERROR',
+      error: err.message,
+      status: err.status || 0,
+    });
   }
 }
 
@@ -203,7 +208,6 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
   try {
     const req = notifySend({
       phoneNumber: patient.phoneRaw,
-      patientName: patient.firstName,
       messageType,
       sentBy: patient.user,
       language: messageLanguage(msgPatient, patient),
@@ -224,9 +228,9 @@ async function handleConfirmationsList(sendResponse) {
     const req = confirmationsList();
     const result = await apiRequest(req.method, req.path, req.body);
     const confirmations = Array.isArray(result.confirmations) ? result.confirmations : [];
-    sendResponse({ ok: true, confirmations });
+    sendResponse({ ok: true, status: 200, confirmations });
   } catch (err) {
-    sendResponse({ ok: false, error: err.message });
+    sendResponse({ ok: false, status: err.status || 0, error: err.message });
   }
 }
 
@@ -235,11 +239,12 @@ async function handleMessagesHistory(phoneNumber, sendResponse) {
     const req = messagesHistory(phoneNumber);
     const result = await apiRequest(req.method, req.path, req.body);
     const messages = Array.isArray(result.messages) ? result.messages : [];
-    sendResponse({ ok: true, messages });
+    sendResponse({ ok: true, status: 200, messages });
   } catch (err) {
     const unavailable = err.status === 404;
     sendResponse({
       ok: false,
+      status: err.status || 0,
       unavailable,
       error: unavailable
         ? "L'historique n'est pas disponible. Mettez à jour le serveur avec cette extension."

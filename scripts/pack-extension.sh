@@ -34,6 +34,7 @@ zip -r "$out" \
   priorx-search.js \
   priorx-lock.js \
   priorx-language.js \
+  poll-schedule.js \
   content.js \
   api-contract.mjs \
   runtime-config.mjs \

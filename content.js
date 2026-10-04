@@ -22,7 +22,10 @@
   // Stay hidden until the Priorx session is confirmed open. Fail closed.
   host.hidden = true;
 
-  const shadow = host.attachShadow({ mode: 'open' });
+  // Closed on purpose. This script keeps the `shadow` reference returned
+  // here, so getElementById still works. Priorx's page scripts cannot read
+  // host.shadowRoot, so the name and phone drawn in the widget stay here.
+  const shadow = host.attachShadow({ mode: 'closed' });
   shadow.innerHTML = `
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -506,6 +509,19 @@
   // to press F5. Do not leave an uncaught error on the page.
   let backgroundTimers = [];
   let contextInvalidated = false;
+  const Poll = globalThis.NotiRxPoll;
+  const pollLeaderId = (globalThis.crypto && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : `tab-${Date.now()}-${Math.random()}`;
+  const POLL_LEADER_KEY = 'notirxPollLeader';
+  let pollTimer = 0;
+  let resumeTimer = 0;
+  let burstTimers = [];
+  let pendingBurstFns = null;
+  let burstCursor = 0;
+  let deferredBurst = null;
+  let pollingStopped = false;
+  let failureStreak = 0;
 
   function extensionContextAlive() {
     try {
@@ -515,15 +531,31 @@
     }
   }
 
+  function clearBurstTimers() {
+    for (const timer of burstTimers) clearTimeout(timer);
+    burstTimers = [];
+  }
+
+  function clearPollTimers() {
+    clearTimeout(pollTimer);
+    clearTimeout(resumeTimer);
+    pollTimer = 0;
+    resumeTimer = 0;
+    clearBurstTimers();
+  }
+
   function stopBackgroundTimers() {
     for (const timer of backgroundTimers) clearInterval(timer);
     backgroundTimers = [];
+    clearPollTimers();
+    pollingStopped = true;
   }
 
   function noteContextInvalidated() {
     if (contextInvalidated) return;
     contextInvalidated = true;
     stopBackgroundTimers();
+    resignLeader().catch(() => {});
     console.info('[NotiRx] Extension rechargée. Appuyez sur F5.');
     try {
       clearTimeout(toastTimer);
@@ -601,6 +633,210 @@
     backgroundTimers.push(timer);
   }
 
+  function storageLocal() {
+    try {
+      return chrome.storage && chrome.storage.local;
+    } catch {
+      return null;
+    }
+  }
+
+  function scheduleCalls(fns, options = {}) {
+    if (!fns || !fns.length) return;
+    clearBurstTimers();
+    const queue = fns.slice();
+    pendingBurstFns = queue;
+    burstCursor = 0;
+    const lead = options.leadMs == null
+      ? (Poll ? Poll.leadDelayMs(Math.random) : 0)
+      : options.leadMs;
+    const offsets = Poll ? Poll.staggerOffsets(queue.length) : queue.map(() => 0);
+    queue.forEach((fn, i) => {
+      const timer = setTimeout(() => {
+        burstCursor = i + 1;
+        if (burstCursor >= queue.length) pendingBurstFns = null;
+        if (contextInvalidated || !extensionContextAlive()) {
+          noteContextInvalidated();
+          return;
+        }
+        if (document.visibilityState === 'hidden') {
+          deferredBurst = queue.slice(i);
+          pendingBurstFns = null;
+          clearBurstTimers();
+          return;
+        }
+        try {
+          fn();
+        } catch (err) {
+          if (!extensionContextAlive() || invalidatedMessage(err)) noteContextInvalidated();
+          else throw err;
+        }
+      }, lead + offsets[i]);
+      burstTimers.push(timer);
+    });
+  }
+
+  function noteApiStatus(status) {
+    if (!Poll || pollingStopped) return;
+    const next = Poll.nextFailureStreak(failureStreak, status);
+    if (next === failureStreak) return;
+    failureStreak = next;
+    if (document.visibilityState === 'hidden') return;
+    const delay = Poll.pollDelayMs(failureStreak, Math.random);
+    if (next > 0) holdLeaderThroughBackoff(delay).catch(() => {});
+    armPollTimer(delay);
+  }
+
+  function armPollTimer(ms) {
+    clearTimeout(pollTimer);
+    pollTimer = 0;
+    if (pollingStopped || contextInvalidated) return;
+    if (document.visibilityState === 'hidden') return;
+    pollTimer = setTimeout(() => {
+      pollTimer = 0;
+      runConfirmationPoll();
+    }, Math.max(0, Number(ms) || 0));
+  }
+
+  async function resignLeader() {
+    const area = storageLocal();
+    if (!area) return;
+    const data = await area.get(POLL_LEADER_KEY);
+    if (Poll && Poll.releaseLeader(data[POLL_LEADER_KEY], pollLeaderId) !== null) return;
+    if (data[POLL_LEADER_KEY] && data[POLL_LEADER_KEY].id === pollLeaderId) {
+      await area.remove(POLL_LEADER_KEY);
+    }
+  }
+
+  async function ensureLeader() {
+    const area = storageLocal();
+    if (!area || !Poll) return true;
+    if (document.visibilityState === 'hidden' || currentAssessment().locked) {
+      await resignLeader();
+      return false;
+    }
+    const now = Date.now();
+    const data = await area.get(POLL_LEADER_KEY);
+    const decision = Poll.claimLeader(data[POLL_LEADER_KEY], {
+      id: pollLeaderId,
+      now,
+      leaseMs: Poll.LEASE_MS,
+    });
+    if (!decision.won) return false;
+    await area.set({ [POLL_LEADER_KEY]: decision.record });
+    const again = await area.get(POLL_LEADER_KEY);
+    return Poll.isLeaderRecord(again[POLL_LEADER_KEY], { id: pollLeaderId, now: Date.now() });
+  }
+
+  async function renewLeaderLease(delayMs) {
+    const area = storageLocal();
+    if (!area || !Poll) return;
+    const data = await area.get(POLL_LEADER_KEY);
+    if (!Poll.isLeaderRecord(data[POLL_LEADER_KEY], { id: pollLeaderId, now: Date.now() })) return;
+    const leaseMs = Poll.leaseMsForDelay(delayMs);
+    await area.set({
+      [POLL_LEADER_KEY]: { id: pollLeaderId, until: Date.now() + leaseMs },
+    });
+  }
+
+  async function holdLeaderThroughBackoff(delayMs) {
+    const area = storageLocal();
+    if (!area || !Poll) return;
+    const now = Date.now();
+    const data = await area.get(POLL_LEADER_KEY);
+    const decision = Poll.claimLeader(data[POLL_LEADER_KEY], {
+      id: pollLeaderId,
+      now,
+      leaseMs: Poll.leaseMsForDelay(delayMs),
+    });
+    if (!decision.won) return;
+    await area.set({ [POLL_LEADER_KEY]: decision.record });
+  }
+
+  function runConfirmationPoll() {
+    if (pollingStopped || contextInvalidated || !extensionContextAlive()) {
+      if (!extensionContextAlive()) noteContextInvalidated();
+      return;
+    }
+    if (!Poll) {
+      if (document.visibilityState !== 'hidden' && !currentAssessment().locked) fetchConfirmations();
+      return;
+    }
+    if (document.visibilityState === 'hidden') return;
+    ensureLeader().then((leader) => {
+      if (pollingStopped || contextInvalidated) return;
+      const visible = document.visibilityState !== 'hidden';
+      const locked = currentAssessment().locked;
+      const delay = Poll.pollDelayMs(leader ? failureStreak : 0, Math.random);
+      if (leader) renewLeaderLease(delay).catch(() => {});
+      // Arm before the request. A fast 429 or 5XX replaces this wait.
+      armPollTimer(delay);
+      if (Poll.shouldPollNow({ visible, locked, isLeader: leader })) {
+        fetchConfirmations();
+      }
+    }).catch(() => {
+      armPollTimer(Poll.pollDelayMs(failureStreak, Math.random));
+      if (document.visibilityState !== 'hidden' && !currentAssessment().locked) fetchConfirmations();
+    });
+  }
+
+  function scheduleVisibleWork() {
+    if (pollingStopped || document.visibilityState === 'hidden') return;
+    clearTimeout(resumeTimer);
+    const delay = Poll ? Poll.resumeDelayMs(Math.random) : 400;
+    resumeTimer = setTimeout(() => {
+      resumeTimer = 0;
+      if (pollingStopped || contextInvalidated || document.visibilityState === 'hidden') return;
+      const burst = deferredBurst;
+      deferredBurst = null;
+      if (burst && burst.length) {
+        scheduleCalls(burst, { leadMs: 0 });
+        armPollTimer(Poll ? Poll.pollDelayMs(failureStreak, Math.random) : 20000);
+        return;
+      }
+      runConfirmationPoll();
+    }, delay);
+  }
+
+  function pauseForHiddenTab() {
+    if (pendingBurstFns && pendingBurstFns.length) {
+      deferredBurst = pendingBurstFns.slice(burstCursor);
+    }
+    pendingBurstFns = null;
+    clearTimeout(pollTimer);
+    pollTimer = 0;
+    clearTimeout(resumeTimer);
+    resumeTimer = 0;
+    clearBurstTimers();
+    resignLeader().catch(() => {});
+  }
+
+  function startPolling() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        pauseForHiddenTab();
+        return;
+      }
+      scheduleVisibleWork();
+    });
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !changes[POLL_LEADER_KEY]) return;
+        if (changes[POLL_LEADER_KEY].newValue) return;
+        if (document.visibilityState === 'hidden' || pollingStopped) return;
+        scheduleVisibleWork();
+      });
+    } catch {
+      // Polling still runs in this tab when storage events are unavailable.
+    }
+    if (!Poll) {
+      every(fetchConfirmations, 20000);
+      return;
+    }
+    if (document.visibilityState === 'hidden') return;
+    armPollTimer(Poll.pollDelayMs(0, Math.random));
+  }
+
   function enterLocked() {
     widgetLocked = true;
     host.hidden = true;
@@ -616,8 +852,13 @@
     host.hidden = false;
     lastActivityAt = Date.now();
     idleExpired = false;
-    onPatientChanged();
-    fetchConfirmations();
+    const calls = planPatientSync();
+    calls.push(() => fetchConfirmations());
+    if (document.visibilityState === 'hidden') {
+      deferredBurst = calls;
+      return;
+    }
+    scheduleCalls(calls, { leadMs: Poll ? Poll.unlockLeadMs(Math.random) : 0 });
   }
 
   function enforceLock() {
@@ -692,6 +933,7 @@
       return;
     }
     sendToBackground({ type: 'CONFIRMATIONS_LIST', priorxUnlocked: true }, response => {
+      noteApiStatus(response?.ok ? 200 : response?.status);
       if (!response?.ok) {
         $('conf-list').replaceChildren();
         $('conf-badge').classList.add('hidden');
@@ -856,10 +1098,12 @@
     listEl.replaceChildren();
 
     if (!response?.ok) {
+      noteApiStatus(response?.status);
       empty.textContent = response?.error || "Impossible de charger l'historique.";
       empty.classList.remove('hidden');
       return;
     }
+    noteApiStatus(200);
 
     const messages = Search
       ? Search.sortMessagesNewestFirst(response.messages)
@@ -894,7 +1138,6 @@
     if (Date.now() - lastActivityAt >= idleMinutes * 60 * 1000) idleExpired = true;
     enforceLock();
   }, 5000);
-  every(fetchConfirmations, 20000);
 
   // ── Messages from background ───────────────────────────────────────────────
 
@@ -954,21 +1197,25 @@
         showView('no-phone'); setDot('orange');
         break;
       case 'UNKNOWN':
+        noteApiStatus(200);
         setName('up-name', p);
         showView('unknown'); setDot('orange');
         panelOpen = true; panel.classList.add('open');
         break;
       case 'OPTED_IN':
+        noteApiStatus(200);
         setName('oi-name', p);
         resetNotify();
         showView('opted-in'); setDot('green');
         if (msg.needsReinscription) $('oi-reinscription').classList.remove('hidden');
         break;
       case 'OPTED_OUT':
+        noteApiStatus(200);
         setName('oo-name', p);
         showView('opted-out'); setDot('red');
         break;
       case 'ERROR':
+        noteApiStatus(msg.status);
         $('err-msg').textContent = msg.error || '';
         showView('error'); setDot('red');
         break;
@@ -1000,7 +1247,11 @@
     }
     sendToBackground({
       type: 'NOTIFY_SEND',
-      patient: currentPatient,
+      patient: {
+        phoneRaw: currentPatient.phoneRaw,
+        user: currentPatient.user,
+        language: currentPatient.language,
+      },
       messageType: pendingNotifyType,
       priorxUnlocked: true,
     });
@@ -1063,21 +1314,22 @@
     return { lastName, firstName, phoneRaw, user, language };
   }
 
-  function onPatientChanged() {
+  function planPatientSync() {
     if (currentAssessment().locked) {
       if (!widgetLocked) enforceLock();
-      return;
+      return [];
     }
     const patient = readPatientFromDOM();
     if (!patient.lastName && !patient.firstName) {
       currentPatient = null;
-      sendToBackground({ type: 'PATIENT_CLEARED' });
-      fetchHistory('');
-      return;
+      return [
+        () => sendToBackground({ type: 'PATIENT_CLEARED' }),
+        () => fetchHistory(''),
+      ];
     }
     if (
       currentPatient &&
-      currentPatient.lastName  === patient.lastName &&
+      currentPatient.lastName === patient.lastName &&
       currentPatient.firstName === patient.firstName &&
       currentPatient.phoneRaw === patient.phoneRaw
     ) {
@@ -1085,11 +1337,26 @@
         currentPatient = patient;
         setLanguageBadge(patient.language);
       }
-      return;
+      return [];
     }
     currentPatient = patient;
-    sendToBackground({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
-    fetchHistory(patient.phoneRaw);
+    return [
+      () => {
+        if (currentAssessment().locked) return;
+        sendToBackground({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
+      },
+      () => fetchHistory(patient.phoneRaw),
+    ];
+  }
+
+  function onPatientChanged() {
+    const calls = planPatientSync();
+    if (!calls.length) return;
+    if (document.visibilityState === 'hidden') {
+      deferredBurst = calls;
+      return;
+    }
+    scheduleCalls(calls);
   }
 
   const nameTarget = document.getElementById('BA01_LastName');
@@ -1141,5 +1408,6 @@
   });
 
   enforceLock();
+  startPolling();
 
 })();
