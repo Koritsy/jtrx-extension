@@ -4,6 +4,13 @@ Nothing in this repository publishes NotiRx. Uploading to a store, and installin
 
 Today the extension is copied on a USB stick and loaded unpacked in developer mode. That copy does not update itself. A new version means another copy of the folder and a click on Reload. A store listing or an enterprise force-install gives pharmacists one install and then automatic updates.
 
+## En bref
+
+Deux façons de quitter le mode développeur. Rien dans ce dépôt ne publie l’extension.
+
+1. **Chrome Web Store (non répertoriée) ou modules complémentaires Edge.** Josi crée le compte, paie les frais Google une seule fois (5 $ US à l’écran d’inscription; Edge ne demande pas de frais), emballe avec `sh scripts/pack-extension.sh`, puis téléverse le zip elle-même. La fiche reste hors recherche. Les mises à jour arrivent toutes seules. Dans les questions de confidentialité : le numéro de téléphone, le nom de la personne connectée, le type de message et la langue (FR ou EN) partent vers NotiRx. Le prénom et le nom de famille restent sur l’ordinateur. Le prénom n’est plus envoyé.
+2. **Installation forcée par l’informatique de Familiprix** (`ExtensionInstallForcelist`), après qu’une fiche existe. La clé API peut être poussée par stratégie (`apiBaseUrl` et `apiKey`, schéma `managed_schema.json`). La saisie manuelle dans Options continue de fonctionner quand aucune stratégie n’est définie.
+
 ## This store’s Priorx host
 
 The content script is limited to one host, written in `manifest.json` as `content_scripts.matches` and again in `host_permissions`:
@@ -31,8 +38,8 @@ Host a page at a public `https` address that anyone can open without logging in,
 The page has to match what the extension actually does (`SECURITY.md`). A draft Josi can edit and host:
 
 - NotiRx is used by pharmacy staff inside Priorx. It adds buttons that ask the NotiRx service to text the patient.
-- On the patient file it reads the last name (shown only on that computer), the first name, the phone number, and the signed-in staff name.
-- It sends the phone number to the NotiRx service. It sends the first name only when a staff member confirms a text. It sends the staff name when a yes or no consent is saved, and again as the sender when a text is confirmed.
+- On the patient file it reads the last name and the first name (both shown only on that computer), the phone number, and the signed-in staff name.
+- It sends the phone number to the NotiRx service. It does not send the first name or the last name. It sends the staff name when a yes or no consent is saved, and again as the sender when a text is confirmed.
 - The text itself is delivered by Twilio. Message content and the phone number are processed by Twilio in the United States.
 - The API address and API key are saved in the browser on that computer, or set by the pharmacy’s administrator through enterprise policy. They are not in the extension files.
 - The extension does not run in a private browsing window.
@@ -41,7 +48,7 @@ Do not write that the extension encrypts data itself, that texts stay in Canada,
 
 ## Version
 
-The manifest version is **1.3.2**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy. After an update, press F5 on the Priorx tab.
+The manifest version is **1.3.3**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy. After an update, press F5 on the Priorx tab.
 
 ## Icons
 
@@ -55,9 +62,9 @@ From the extension folder:
 sh scripts/pack-extension.sh
 ```
 
-The script stops unless `content_scripts.matches` is exactly `https://4502812786.priorx.ca/*` and `host_permissions` is that host plus `https://*.execute-api.ca-central-1.amazonaws.com/*`. It writes `dist/notirx-1.3.2.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
+The script stops unless `content_scripts.matches` is exactly `https://4502812786.priorx.ca/*` and `host_permissions` is that host plus `https://*.execute-api.ca-central-1.amazonaws.com/*`. It writes `dist/notirx-1.3.3.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
 
-The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `priorx-language.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
+The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `priorx-language.js`, `poll-schedule.js`, `content.js`, `api-contract.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
 
 Leave out `test.html`, the test files, `.git`, and any `config.js`.
 
@@ -65,7 +72,7 @@ Leave out `test.html`, the test files, `.git`, and any `config.js`.
 
 Pharmacists open one link, click to install, and later versions arrive automatically. The listing does not appear in store search. Anyone who has the link can still open it, so the link is not a secret.
 
-1. Register a Chrome Web Store developer account if you do not already have one. Google charges a one-time registration fee. This repository does not do that.
+1. Register a Chrome Web Store developer account if you do not already have one. Google’s registration screen charges a one-time fee of US$5. There is no yearly fee. Edge Add-ons does not charge a registration fee; a Microsoft account is enough. This repository does not register the account or pay the fee. Confirm the amount on the screen before paying.
 2. Run `sh scripts/pack-extension.sh`. The zip is limited to this store’s Priorx host.
 3. In the [developer dashboard](https://chrome.google.com/webstore/devconsole), create a new item and upload the zip.
 4. Set visibility to **Unlisted**.
@@ -82,7 +89,7 @@ Text for the permission boxes:
 - **Host permission (Priorx):** Runs only on `https://4502812786.priorx.ca`. The widget reads the name, phone, language (FR or EN), and signed-in staff name when those fields are on the page (the patient file under `/4502812786.Web/`). Another store is a different subdomain and is not included.
 - **Host permission (API):** Calls the NotiRx API on `https://*.execute-api.ca-central-1.amazonaws.com`. That is API Gateway in Canada (ca-central-1) only. It does not cover other AWS hosts or a custom API address.
 
-Data to declare in the privacy questions: phone number, patient first name, staff name when consent is saved and when a text is confirmed, which of the four messages was chosen, and whether the text is French or English (`FR` or `EN` only). The last name stays on the computer. The extension does not collect account passwords or browsing history.
+Data to declare in the privacy questions: phone number, staff name when consent is saved and when a text is confirmed, which of the four messages was chosen, and whether the text is French or English (`FR` or `EN` only). The first name and the last name stay on the computer; the first name is no longer uploaded. The Réponses list can still show a name the server already stored. The extension does not collect account passwords or browsing history.
 
 ## Option 2 — Edge Add-ons
 

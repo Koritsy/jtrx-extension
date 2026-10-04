@@ -32,12 +32,12 @@ The script is injected only on `https://4502812786.priorx.ca`, including pages u
 | On the page | Used for |
 |---|---|
 | `BA01_LastName` | Shown in the widget on this computer. Stays on this computer. |
-| `BA01_FirstName` | Shown in the widget. Sent to the backend only after a staff member confirms an SMS, because the text includes the first name. |
+| `BA01_FirstName` | Shown in the widget on this computer. It is not sent to the backend. |
 | `BA01_Info2` | The phone is the part before ` - `, digits only. A street address after ` - ` is left on the page. |
 | `LoginName1` | The signed-in staff name. Sent as `recorded_by` when staff save a yes or no consent, and as `sent_by` when they confirm an SMS (omitted when the field is empty). |
 | `BA01_language` | The span next to the patient name. Text is sent on `POST /notify` as `language`: `EN` when it says EN, ENG, ANGLAIS, or ENGLISH, and `FR` otherwise. A missing or unreadable span becomes `FR`. A send is not blocked. The id is lowercase; `#BA01_Language` does not match. |
 
-The widget is drawn in a closed shadow root. Its buttons are separate from Priorx’s page.
+The widget is drawn in a closed shadow root (`attachShadow({ mode: 'closed' })`). The content script keeps the shadow reference it created, so its own buttons still work. Priorx’s page scripts cannot read `shadowRoot` on the host, so a name or phone drawn in the widget is not exposed to the page. Nothing in this extension reads `element.shadowRoot`.
 
 If Priorx shows `#lockscreen` (the NIP screen, lowercase id), or no staff member is signed in, the widget is removed from the screen. It does not send a text, change consent, or show Réponses, Historique, names, or phone numbers. It comes back when that element is gone and `LoginName1` is visible again. The check runs when the page changes and again immediately before every send. If the check cannot tell that someone is signed in, the send is blocked. The widget also closes itself after a period with no activity on the page (5 minutes unless Options sets another value from 1 to 120). Priorx’s own delay differs by pharmacy. That value is stored in this browser. It is not sent to the server.
 
@@ -55,7 +55,7 @@ The phone number is the JSON field `phone_number`. It is not part of the web add
 |---|---|---|
 | Open a patient file | `POST /consent/lookup` | `phone_number` |
 | Save yes or no | `POST /consent` | `phone_number`, `consent`, `recorded_by` |
-| Confirm an SMS | `POST /notify` | `phone_number`, `patient_name` (first name), `message_type`, `language` (`EN` or `FR`), and `sent_by` when the staff login is known |
+| Confirm an SMS | `POST /notify` | `phone_number`, `message_type`, `language` (`EN` or `FR`), and `sent_by` when the staff login is known. The first name is not included. |
 | Open the Réponses list | `GET /confirmations` | none |
 | Mark a reply done | `POST /confirmations/{confirmation_id}/dismiss` | none |
 | Open Historique for the file on screen | `POST /messages/history` | `phone_number` |
@@ -67,6 +67,8 @@ The phone number is the JSON field `phone_number`. It is not part of the web add
 Replies the widget reads: `consent`, `consent_date`, `needs_reinscription`, `message_sid`, and `confirmations` (each item: `confirmation_id`, `patient_name`, `replied_at`, plus `phone_number` and `message_type` when the server sends them). A row without `phone_number` stays in the list and cannot be clicked to search. Historique reads `messages` (each item: `message_type`, `sent_at`, `sent_by`, `status`, and optionally `direction` and `reply_keyword`). If that path answers 404, the Historique tab shows a French notice and the rest of the widget keeps working.
 
 Paths and field names live in `api-contract.mjs`. The background script refuses any other path before it calls the network.
+
+The repeating Réponses check runs about every 20 seconds, give or take 5 seconds, from one unlocked visible tab. That tab keeps a short lease in `chrome.storage.local` under `notirxPollLeader`. The lease is not the API key. A hidden tab or a locked tab drops it, and another visible tab picks it up. After the server answers 429 or a 5XX, that wait doubles each time up to about 2 minutes, then goes back to about 20 seconds after a successful call. Opening a patient file, or unlocking Priorx, still loads consent, history, and Réponses once on that tab, spaced a few hundred milliseconds apart, with a short random head start so several tabs do not fire together. The 5-minute idle lock is unchanged and does not call the API.
 
 ## API key
 
@@ -88,7 +90,7 @@ Do not commit the key, and do not put it in `manifest.json`.
 The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
 1. Copy this folder to the pharmacy computer. Do not copy a `config.js`. The manifest is already limited to `https://4502812786.priorx.ca/*`.
-2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.2**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
+2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.3**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
 3. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
 4. Reload the Priorx tab and open a patient file (`/4502812786.Web/index.aspx`). The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. Patients who replied OUI are on the **Réponses** tab. Texts for the open file are on the **Historique** tab.
 

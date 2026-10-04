@@ -39,17 +39,19 @@ test('consent save, notify, and confirmations use fixed paths', () => {
   });
   assert.equal(notify.path, '/notify');
   assert.equal(notify.body.message_type, 'renewal');
-  assert.equal(notify.body.patient_name, 'Alex');
+  assert.equal(Object.hasOwn(notify.body, 'patient_name'), false);
+  assert.equal(JSON.stringify(notify.body).includes('Alex'), false);
   assert.equal(notify.body.sent_by, 'DEMO');
   assert.equal(notify.body.language, 'FR');
 
   const english = notifySend({
     phoneNumber: PHONE,
-    patientName: 'Alex',
+    patientName: 'Alex Exemple',
     messageType: 'ready',
     language: 'EN',
   });
   assert.equal(english.body.language, 'EN');
+  assert.equal(JSON.stringify(english.body).includes('Exemple'), false);
 
   const rawEnglish = notifySend({
     phoneNumber: PHONE,
@@ -62,6 +64,7 @@ test('consent save, notify, and confirmations use fixed paths', () => {
   assert.equal(ready.body.message_type, 'ready');
   assert.equal(ready.body.language, 'FR');
   assert.equal(Object.hasOwn(ready.body, 'sent_by'), false);
+  assert.equal(Object.hasOwn(ready.body, 'patient_name'), false);
 
   const blankSender = notifySend({
     phoneNumber: PHONE,
@@ -166,11 +169,12 @@ test('manifest grants storage, this Priorx host, and the API Gateway host', () =
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.3.2');
+  assert.equal(manifest.version, '1.3.3');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'priorx-search.js',
     'priorx-lock.js',
     'priorx-language.js',
+    'poll-schedule.js',
     'content.js',
   ]);
   assert.equal(manifest.minimum_chrome_version, '109');
@@ -268,8 +272,18 @@ test('extension source no longer intercepts page requests or reads config.js', (
   );
   assert.equal((content.match(/chrome\.runtime\.sendMessage/g) || []).length, 1);
   assert.equal((content.match(/setInterval\(/g) || []).length, 1);
+  assert.equal(content.includes("attachShadow({ mode: 'closed' })"), true);
+  assert.equal(content.includes("mode: 'open'"), false);
+  assert.equal(content.includes('notirxPollLeader'), true);
+  assert.equal(content.includes('visibilityState'), true);
+  assert.equal(content.includes('NotiRxPoll'), true);
+  assert.equal(content.includes('unlockLeadMs'), true);
+  assert.equal(content.includes('BA01_FirstName'), true);
 
   assert.equal(background.includes('sentBy: patient.user'), true);
+  assert.equal(background.includes('patientName'), false);
+  assert.equal(background.includes('patient.firstName'), false);
+  assert.equal(background.includes('patient_name'), false);
   assert.equal(background.includes('language: messageLanguage(msgPatient, patient)'), true);
   assert.equal(background.includes('Priorx est verrouillé.'), true);
   assert.equal(background.includes('MESSAGES_HISTORY'), true);
@@ -288,4 +302,25 @@ test('extension source no longer intercepts page requests or reads config.js', (
     assert.equal(testPage.includes(leaked), false, leaked);
   }
   assert.equal(testPage.includes('555-010-0199'), true);
+  assert.equal(content.includes("type: 'NOTIFY_SEND'"), true);
+  assert.equal(content.includes('phoneRaw: currentPatient.phoneRaw'), true);
+  assert.equal(content.includes('firstName: currentPatient.firstName'), false);
+});
+
+test('store zip lists the widget files and leaves tests out', () => {
+  const pack = readFileSync(new URL('./scripts/pack-extension.sh', import.meta.url), 'utf8');
+  for (const file of [
+    'manifest.json',
+    'background.js',
+    'poll-schedule.js',
+    'content.js',
+    'api-contract.mjs',
+    'runtime-config.mjs',
+    'managed_schema.json',
+  ]) {
+    assert.equal(pack.includes(file), true, file);
+  }
+  for (const excluded of ['test.html', 'api-contract.test.mjs', 'poll-schedule.test.mjs', 'SECURITY.md', 'DISTRIBUTION.md']) {
+    assert.equal(pack.includes(excluded), false, excluded);
+  }
 });
