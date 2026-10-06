@@ -303,6 +303,15 @@
           <button id="btn-change" class="btn btn-ghost" style="margin-top:7px">Modifier</button>
         </div>
 
+        <div id="v-sms-opt-out" class="view">
+          <div class="name-row">
+            <div id="so-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
+          <span class="badge no">✗ ARRÊT par texto</span>
+          <div class="warn">Le patient a répondu ARRÊT par texto. Il doit texter COMMENCER pour se réabonner.</div>
+        </div>
+
         <div id="v-error" class="view">
           <div class="muted">⚠️ <span id="err-msg"></span></div>
           <button id="btn-retry" class="btn btn-ghost">Réessayer</button>
@@ -379,7 +388,7 @@
 
   // ── View helpers ──────────────────────────────────────────────────────────────
 
-  const VIEWS = ['no-patient', 'loading', 'no-phone', 'unknown', 'opted-in', 'opted-out', 'error'];
+  const VIEWS = ['no-patient', 'loading', 'no-phone', 'unknown', 'opted-in', 'opted-out', 'sms-opt-out', 'error'];
 
   function showView(name) {
     VIEWS.forEach(v => $(`v-${v}`)?.classList.toggle('active', v === name));
@@ -412,6 +421,7 @@
   // ── Top nav (Patient / Réponses / Historique) ───────────────────────────────
 
   const Search = globalThis.NotiRxSearch;
+  const Confirmations = globalThis.NotiRxConfirmations;
   let toastTimer = 0;
 
   function showToast(message, durationMs = 4500) {
@@ -431,7 +441,10 @@
     $('v-history').classList.toggle('active', name === 'history');
   }
 
-  $('nav-patient').addEventListener('click', () => setActiveTab('patient'));
+  $('nav-patient').addEventListener('click', () => {
+    setActiveTab('patient');
+    refreshSmsOptOut();
+  });
   $('nav-responses').addEventListener('click', () => {
     setActiveTab('responses');
     fetchConfirmations();
@@ -444,6 +457,8 @@
   // ── Réponses (patients who replied OUI) ──────────────────────────────────────
 
   const EMPTY_CONFIRMATIONS = 'Aucune réponse en attente';
+  let confirmationItems = [];
+  const suppressedDismissIds = new Set();
   const TOAST_COPIED = 'Numéro copié — collez-le dans la recherche (F3)';
 
   // ── Priorx lock / no signed-in user ─────────────────────────────────────────
@@ -453,6 +468,7 @@
   const Lock = globalThis.NotiRxLock;
   const Lang = globalThis.NotiRxLanguage;
   let widgetLocked = true;
+  let smsOptOutActive = false;
   let priorxWasLocked = false;
   let idleExpired = false;
   let lastActivityAt = Date.now();
@@ -490,7 +506,7 @@
     $('hist-list').replaceChildren();
     $('conf-badge').classList.add('hidden');
     $('conf-badge').textContent = '0';
-    for (const id of ['up-name', 'oi-name', 'oo-name', 'oi-confirm-text']) {
+    for (const id of ['up-name', 'oi-name', 'oo-name', 'so-name', 'oi-confirm-text']) {
       const el = $(id);
       if (el) el.textContent = id === 'oi-confirm-text' ? '' : '';
     }
@@ -753,6 +769,17 @@
     await area.set({ [POLL_LEADER_KEY]: decision.record });
   }
 
+  function refreshSmsOptOut() {
+    if (!smsOptOutActive || !currentPatient) return;
+    if (currentAssessment().locked) return;
+    sendToBackground({
+      type: 'RETRY_PATIENT',
+      patient: currentPatient,
+      priorxUnlocked: true,
+      quiet: true,
+    });
+  }
+
   function runConfirmationPoll() {
     if (pollingStopped || contextInvalidated || !extensionContextAlive()) {
       if (!extensionContextAlive()) noteContextInvalidated();
@@ -773,6 +800,7 @@
       armPollTimer(delay);
       if (Poll.shouldPollNow({ visible, locked, isLeader: leader })) {
         fetchConfirmations();
+        refreshSmsOptOut();
       }
     }).catch(() => {
       armPollTimer(Poll.pollDelayMs(failureStreak, Math.random));
@@ -830,7 +858,10 @@
       // Polling still runs in this tab when storage events are unavailable.
     }
     if (!Poll) {
-      every(fetchConfirmations, 20000);
+      every(() => {
+        fetchConfirmations();
+        refreshSmsOptOut();
+      }, 20000);
       return;
     }
     if (document.visibilityState === 'hidden') return;
@@ -839,6 +870,7 @@
 
   function enterLocked() {
     widgetLocked = true;
+    smsOptOutActive = false;
     host.hidden = true;
     panelOpen = false;
     panel.classList.remove('open');
@@ -946,23 +978,33 @@
     });
   }
 
+  function shownConfirmations(items) {
+    if (Confirmations) return Confirmations.visibleConfirmations(items, suppressedDismissIds);
+    return (Array.isArray(items) ? items : []).filter((item) => {
+      const id = String(item?.confirmation_id ?? '').trim();
+      return !id || !suppressedDismissIds.has(id);
+    });
+  }
+
   function renderConfirmations(items) {
     if (currentAssessment().locked) {
       clearSensitiveUi();
       return;
     }
+    confirmationItems = Array.isArray(items) ? items : [];
+    const visible = shownConfirmations(confirmationItems);
     const badge = $('conf-badge');
-    badge.textContent = String(items.length);
-    badge.classList.toggle('hidden', items.length === 0);
+    badge.textContent = String(visible.length);
+    badge.classList.toggle('hidden', visible.length === 0);
 
     const empty = $('conf-empty');
     empty.textContent = EMPTY_CONFIRMATIONS;
-    empty.classList.toggle('hidden', items.length > 0);
+    empty.classList.toggle('hidden', visible.length > 0);
 
     const listEl = $('conf-list');
     listEl.replaceChildren();
 
-    items.forEach(item => {
+    visible.forEach(item => {
       const digits = Search ? Search.phoneDigits(item.phone_number) : '';
       const canSearch = digits.length >= 10;
       const row = document.createElement('div');
@@ -1047,9 +1089,21 @@
       );
       return;
     }
+    const started = Confirmations
+      ? Confirmations.beginDismiss(suppressedDismissIds, id)
+      : (suppressedDismissIds.has(id)
+        ? { ok: false, reason: 'duplicate' }
+        : (suppressedDismissIds.add(id), { ok: true, id }));
+    if (!started.ok) return;
+    // Hide before the POST. A later poll filters this id out until the page reloads.
+    renderConfirmations(confirmationItems);
     sendToBackground({ type: 'CONFIRMATION_DISMISS', confirmationId: id, priorxUnlocked: true }, response => {
-      if (response?.ok) fetchConfirmations();
-      else showToast(response?.error || 'Impossible de marquer cette réponse comme terminée.', 8000);
+      if (response?.ok) return;
+      console.warn("[NotiRx] Fait : échec de l'enregistrement", {
+        confirmationId: id,
+        status: response?.status || 0,
+        error: response?.error || 'aucune réponse du service',
+      });
     });
   }
 
@@ -1184,6 +1238,7 @@
   function applyState(msg) {
     if (currentAssessment().locked) return;
     $('oi-reinscription').classList.add('hidden');
+    smsOptOutActive = false;
     const p = msg.patient;
 
     switch (msg.state) {
@@ -1213,6 +1268,12 @@
         noteApiStatus(200);
         setName('oo-name', p);
         showView('opted-out'); setDot('red');
+        break;
+      case 'SMS_OPT_OUT':
+        smsOptOutActive = true;
+        if (!msg.status || msg.status === 200) noteApiStatus(200);
+        setName('so-name', p);
+        showView('sms-opt-out'); setDot('red');
         break;
       case 'ERROR':
         noteApiStatus(msg.status);
@@ -1291,10 +1352,18 @@
       priorxUnlocked: true,
       data: { consent, recordedBy: currentPatient?.user || 'unknown', patient: currentPatient },
     }, response => {
-      if (!response?.ok) {
-        $('err-msg').textContent = response?.error || '';
-        showView('error'); setDot('red');
+      if (response?.smsOptOut) {
+        applyState({
+          state: 'SMS_OPT_OUT',
+          patient: currentPatient,
+          smsOptOut: true,
+          status: response.status || 409,
+        });
+        return;
       }
+      if (response?.ok) return;
+      $('err-msg').textContent = response?.error || '';
+      showView('error'); setDot('red');
     });
   }
 

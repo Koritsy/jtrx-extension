@@ -64,7 +64,7 @@ The phone number is the JSON field `phone_number`. It is not part of the web add
 
 `confirmation_id` is the id returned by the OUI list. It looks like `2026-09-30T21:58:12+00:00#a1b2c3d4`. The `#` is sent as `%23` in the path, so it is not a URL fragment. The list is drawn with text nodes, so a name or an id from the server is shown as text.
 
-Replies the widget reads: `consent`, `consent_date`, `needs_reinscription`, `message_sid`, and `confirmations` (each item: `confirmation_id`, `patient_name`, `replied_at`, plus `phone_number` and `message_type` when the server sends them). A row without `phone_number` stays in the list and cannot be clicked to search. Historique reads `messages` (each item: `message_type`, `sent_at`, `sent_by`, `status`, and optionally `direction` and `reply_keyword`). If that path answers 404, the Historique tab shows a French notice and the rest of the widget keeps working.
+Replies the widget reads: `consent`, `consent_date`, `needs_reinscription`, `message_sid`, and `confirmations` (each item: `confirmation_id`, `patient_name`, `replied_at`, plus `phone_number` and `message_type` when the server sends them). When `needs_reinscription` is true and `consent` is not `yes`, or when the lookup also sends `sms_opt_out`, `opted_out_by_sms`, or `opt_out_source` of `sms` or `twilio`, the patient screen shows a French notice and no consent button. Saving yes after an SMS opt-out answers 409; the widget shows that same notice instead of the status text. `consent` `yes` shows the normal screen again. A row without `phone_number` stays in the list and cannot be clicked to search. Historique reads `messages` (each item: `message_type`, `sent_at`, `sent_by`, `status`, and optionally `direction` and `reply_keyword`). If that path answers 404, the Historique tab shows a French notice and the rest of the widget keeps working.
 
 Paths and field names live in `api-contract.mjs`. The background script refuses any other path before it calls the network.
 
@@ -90,7 +90,7 @@ Do not commit the key, and do not put it in `manifest.json`.
 The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
 1. Copy this folder to the pharmacy computer. Do not copy a `config.js`. The manifest is already limited to `https://4502812786.priorx.ca/*`.
-2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.3**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
+2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.4**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
 3. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
 4. Reload the Priorx tab and open a patient file (`/4502812786.Web/index.aspx`). The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. Patients who replied OUI are on the **Réponses** tab. Texts for the open file are on the **Historique** tab.
 

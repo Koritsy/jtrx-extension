@@ -9,10 +9,13 @@ import {
   messagesHistory,
   notifySend,
 } from './api-contract.mjs';
+import { consentSaveBlockedBySms, smsOptOutFromLookup } from './consent-opt-out.mjs';
 import { pickRuntimeConfig } from './runtime-config.mjs';
 
 // Keyed by tabId — current patient and consent for that Priorx tab.
 const tabState = {};
+// Drops a consent lookup that returns after a newer one for the same tab.
+const consentLookupSeq = {};
 
 // Content-script messages include sender.tab.id. The toolbar icon does too.
 let activeTabId = null;
@@ -56,14 +59,25 @@ async function apiRequest(method, path, body = null) {
   if (body) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${apiBaseUrl}${path}`, opts);
+  const text = await res.text();
   if (!res.ok) {
     const error = new Error(`API ${method} ${path} → ${res.status}`);
     error.status = res.status;
+    error.body = parseJsonBody(text);
     throw error;
   }
-  const text = await res.text();
   if (!text) return {};
   return JSON.parse(text);
+}
+
+function parseJsonBody(text) {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function rejectIfLocked(msg, sendResponse) {
@@ -89,6 +103,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'PATIENT_CLEARED':
       delete tabState[tabId];
+      consentLookupSeq[tabId] = (consentLookupSeq[tabId] || 0) + 1;
       broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
       break;
 
@@ -124,7 +139,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       const patient = tabState[tabId]?.patient ?? msg.patient;
       if (patient) {
-        handlePatientChanged(tabId, patient);
+        handlePatientChanged(tabId, patient, { quiet: msg.quiet === true });
       } else {
         broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PATIENT' });
       }
@@ -140,10 +155,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-async function handlePatientChanged(tabId, patient) {
-  tabState[tabId] = { patient, consent: null };
+async function handlePatientChanged(tabId, patient, options = {}) {
+  const quiet = options.quiet === true;
+  const seq = (consentLookupSeq[tabId] || 0) + 1;
+  consentLookupSeq[tabId] = seq;
+  if (!quiet || !tabState[tabId]) {
+    tabState[tabId] = { patient, consent: null };
+  } else {
+    tabState[tabId].patient = patient;
+  }
 
-  broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'LOADING', patient });
+  // A quiet refresh keeps the ARRÊT notice on screen while it rechecks.
+  // Showing Vérification… on each poll would flash the panel.
+  if (!quiet) {
+    broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'LOADING', patient });
+  }
 
   if (!patient.phoneRaw || patient.phoneRaw.length < 10) {
     broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PHONE', patient });
@@ -153,17 +179,22 @@ async function handlePatientChanged(tabId, patient) {
   try {
     const req = consentLookup(patient.phoneRaw);
     const result = await apiRequest(req.method, req.path, req.body);
+    if (consentLookupSeq[tabId] !== seq) return;
     const consent = result.consent;
     tabState[tabId].consent = consent;
+    const smsOptOut = smsOptOutFromLookup(result);
 
     broadcastToPanel(tabId, {
       type: 'STATE_UPDATE',
-      state: consentToState(consent),
+      state: smsOptOut ? 'SMS_OPT_OUT' : consentToState(consent),
       patient,
       consentDate: result.consent_date || null,
       needsReinscription: result.needs_reinscription || false,
+      smsOptOut,
     });
   } catch (err) {
+    if (consentLookupSeq[tabId] !== seq) return;
+    if (quiet) return;
     broadcastToPanel(tabId, {
       type: 'STATE_UPDATE',
       state: 'ERROR',
@@ -192,7 +223,19 @@ async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatie
     });
     sendResponse({ ok: true });
   } catch (err) {
-    sendResponse({ ok: false, error: err.message });
+    if (consentSaveBlockedBySms(err.status, consent)) {
+      if (tabState[tabId]) tabState[tabId].consent = 'no';
+      broadcastToPanel(tabId, {
+        type: 'STATE_UPDATE',
+        state: 'SMS_OPT_OUT',
+        patient,
+        smsOptOut: true,
+        status: 409,
+      });
+      sendResponse({ ok: false, smsOptOut: true, status: 409 });
+      return;
+    }
+    sendResponse({ ok: false, error: err.message, status: err.status || 0 });
   }
 }
 
@@ -259,7 +302,14 @@ async function handleConfirmationDismiss(confirmationId, sendResponse) {
     await apiRequest(req.method, req.path, req.body);
     sendResponse({ ok: true });
   } catch (err) {
-    sendResponse({ ok: false, error: err.message });
+    // The row is already gone in the page. Log enough to debug, and do not
+    // ask the widget to put the row back or to show a toast.
+    console.warn("[NotiRx] Fait : échec de l'enregistrement", {
+      confirmationId,
+      status: err.status || 0,
+      error: err.message,
+    });
+    sendResponse({ ok: false, status: err.status || 0, error: err.message });
   }
 }
 

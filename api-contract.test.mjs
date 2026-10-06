@@ -169,12 +169,13 @@ test('manifest grants storage, this Priorx host, and the API Gateway host', () =
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.3.3');
+  assert.equal(manifest.version, '1.3.4');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'priorx-search.js',
     'priorx-lock.js',
     'priorx-language.js',
     'poll-schedule.js',
+    'confirmation-list.js',
     'content.js',
   ]);
   assert.equal(manifest.minimum_chrome_version, '109');
@@ -268,8 +269,10 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('item.confirmation_id'), true);
   assert.equal(
     content.includes("showToast(response?.error || 'Impossible de marquer cette réponse comme terminée.', 8000)"),
-    true,
+    false,
   );
+  assert.equal(content.includes("Fait : échec de l'enregistrement"), true);
+  assert.equal(content.includes('Le patient a répondu ARRÊT par texto.'), true);
   assert.equal((content.match(/chrome\.runtime\.sendMessage/g) || []).length, 1);
   assert.equal((content.match(/setInterval\(/g) || []).length, 1);
   assert.equal(content.includes("attachShadow({ mode: 'closed' })"), true);
@@ -313,6 +316,8 @@ test('store zip lists the widget files and leaves tests out', () => {
     'manifest.json',
     'background.js',
     'poll-schedule.js',
+    'confirmation-list.js',
+    'consent-opt-out.mjs',
     'content.js',
     'api-contract.mjs',
     'runtime-config.mjs',
