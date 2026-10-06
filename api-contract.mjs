@@ -32,6 +32,11 @@
 //
 // Responses this extension reads:
 //   lookup:        consent, consent_date, needs_reinscription
+//                  Optional, same meaning as needs_reinscription when consent
+//                  is not yes: sms_opt_out, opted_out_by_sms, opt_out_source
+//                  ("sms" or "twilio"). consent "yes" is subscribed again.
+//   consent save:  409 when staff set yes after an SMS opt-out. The widget
+//                  shows a French notice and does not show the status text.
 //   notify:        message_sid
 //   confirmations: confirmations[].confirmation_id, patient_name, replied_at,
 //                  phone_number (10 digits, may be missing on an older server),

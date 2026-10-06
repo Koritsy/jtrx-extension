@@ -35,7 +35,9 @@ zip -r "$out" \
   priorx-lock.js \
   priorx-language.js \
   poll-schedule.js \
+  confirmation-list.js \
   content.js \
+  consent-opt-out.mjs \
   api-contract.mjs \
   runtime-config.mjs \
   options.html \
