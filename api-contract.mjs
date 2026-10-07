@@ -23,8 +23,10 @@
 // message_type is ready | partial | new_prescription | renewal.
 // The patient's first name is not sent. The widget may still show it on this computer.
 // sent_by is the staff login from LoginName1. It is omitted when that field is empty.
-// language is EN or FR. EN only when the patient file says EN, ENG, ANGLAIS, or ENGLISH.
-// Anything else, including a missing field, is FR. An older server ignores language and sends French.
+// language is EN or FR. The widget sends EN when Priorx shows EN, ENG, ANG, AN,
+// (AN), ANGLAIS, or ENGLISH. Anything else, including a missing field, is FR.
+// Priorx labels English as (AN), not (EN). The extension sends EN, not AN.
+// An older server ignores language and sends French.
 // confirmation_id is the id returned by GET /confirmations, not a phone number.
 // Backend dismiss_confirmation accepts ^[0-9A-Za-z:+.\-]{20,40}#[0-9a-f]{8}$
 // for example 2026-09-30T21:58:12+00:00#a1b2c3d4. encodeURIComponent puts it in

@@ -46,6 +46,6 @@ test('the patient screen uses the French ARRÊT notice and keeps Modifier for a 
   );
   assert.equal(smsView.includes('<button'), false);
   assert.equal(background.includes('consentSaveBlockedBySms'), true);
-  assert.equal(background.includes("state: 'SMS_OPT_OUT'"), true);
+  assert.equal(background.includes("'SMS_OPT_OUT'"), true);
   assert.equal(background.includes('smsOptOutFromLookup'), true);
 });

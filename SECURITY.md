@@ -29,13 +29,15 @@ Options and policy still accept any https URL. A base URL on another host (anoth
 
 The script is injected only on `https://4502812786.priorx.ca`, including pages under `/4502812786.Web/`. It draws the widget only when the patient file is on screen (the page contains `BA01_LastName`).
 
+Priorx fills the name and the phone in separate steps. The widget stays on « Vérification… » (the name is shown once it is on the page) and does not show the consent prompt or the send buttons until that name and phone have stopped changing and `POST /consent/lookup` for that phone has returned. A reply for an earlier file is ignored.
+
 | On the page | Used for |
 |---|---|
 | `BA01_LastName` | Shown in the widget on this computer. Stays on this computer. |
 | `BA01_FirstName` | Shown in the widget on this computer. It is not sent to the backend. |
 | `BA01_Info2` | The phone is the part before ` - `, digits only. A street address after ` - ` is left on the page. |
 | `LoginName1` | The signed-in staff name. Sent as `recorded_by` when staff save a yes or no consent, and as `sent_by` when they confirm an SMS (omitted when the field is empty). |
-| `BA01_language` | The span next to the patient name. Text is sent on `POST /notify` as `language`: `EN` when it says EN, ENG, ANGLAIS, or ENGLISH, and `FR` otherwise. A missing or unreadable span becomes `FR`. A send is not blocked. The id is lowercase; `#BA01_Language` does not match. |
+| `BA01_language` | The span next to the patient name. Priorx shows English as `(AN)` (anglais), not `(EN)`. Text is sent on `POST /notify` as `language`: `EN` when it says AN, ANG, EN, ENG, ANGLAIS, or ENGLISH (parentheses and spaces ignored), and `FR` otherwise. A missing or unreadable span becomes `FR`. A send is not blocked. The id is lowercase; `#BA01_Language` does not match. |
 
 The widget is drawn in a closed shadow root (`attachShadow({ mode: 'closed' })`). The content script keeps the shadow reference it created, so its own buttons still work. Priorx’s page scripts cannot read `shadowRoot` on the host, so a name or phone drawn in the widget is not exposed to the page. Nothing in this extension reads `element.shadowRoot`.
 
@@ -90,7 +92,7 @@ Do not commit the key, and do not put it in `manifest.json`.
 The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
 1. Copy this folder to the pharmacy computer. Do not copy a `config.js`. The manifest is already limited to `https://4502812786.priorx.ca/*`.
-2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.4**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
+2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.5**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
 3. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
 4. Reload the Priorx tab and open a patient file (`/4502812786.Web/index.aspx`). The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. Patients who replied OUI are on the **Réponses** tab. Texts for the open file are on the **Historique** tab.
 
