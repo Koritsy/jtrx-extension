@@ -4,6 +4,10 @@
 // BA01_FirstName, BA01_Info2, LoginName1), so the /4502812786.Web/ folder
 // does not change which elements are read. If BA01_LastName is absent the
 // script returns without drawing anything. Page network traffic is left untouched.
+//
+// Priorx fills those fields in separate steps. The consent prompt and the send
+// buttons stay hidden until the name and phone have stopped changing and the
+// lookup for that phone has returned. A reply for an earlier file is ignored.
 
 (function () {
   if (!document.getElementById('BA01_LastName')) return;
@@ -115,6 +119,7 @@
       }
       .btn:last-child { margin-bottom: 0; }
       .btn:hover { opacity: .88; }
+      .btn:disabled { opacity: .45; cursor: not-allowed; }
       .btn-blue  { background: #1565c0; color: #fff; }
       .btn-green { background: #2e7d32; color: #fff; }
       .btn-red   { background: #c62828; color: #fff; }
@@ -128,7 +133,7 @@
 
       .row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 
-      .muted { font-size: 11px; color: #757575; margin-bottom: 7px; line-height: 1.4; }
+      .muted { font-size: 11px; color: #757575; margin-bottom: 7px; line-height: 1.4; overflow-wrap: anywhere; }
 
       .confirm {
         background: #fff3e0; border: 1px solid #ffe0b2;
@@ -146,6 +151,7 @@
         background: #fff3e0; border-radius: 6px;
         padding: 6px; font-size: 11px; color: #e65100;
         margin-top: 5px; line-height: 1.4;
+        overflow-wrap: anywhere;
       }
 
       .empty { text-align: center; padding: 14px 8px; color: #9e9e9e; font-size: 12px; }
@@ -234,10 +240,18 @@
         </div>
 
         <div id="v-loading" class="view">
+          <div id="ld-name-row" class="name-row hidden">
+            <div id="ld-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <div class="empty">Vérification…</div>
         </div>
 
         <div id="v-no-phone" class="view">
+          <div id="np-name-row" class="name-row hidden">
+            <div id="np-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <div class="muted">⚠️ Numéro introuvable dans le dossier.</div>
         </div>
 
@@ -260,6 +274,7 @@
             <span class="lang-badge" title="Langue du SMS">FR</span>
           </div>
           <span class="badge yes">✓ SMS actif</span>
+          <div id="oi-phone-block" class="warn hidden"></div>
 
           <div id="oi-area">
             <button class="btn btn-blue" data-notify-type="ready">📱 Commande prête</button>
@@ -412,10 +427,27 @@
     if (p) setLanguageBadge(p.language);
   }
 
+  function applySendBlock(phoneRaw) {
+    const message = Patient ? Patient.phoneBlockedMessage(phoneRaw) : '';
+    const block = $('oi-phone-block');
+    const buttons = $('oi-area').querySelectorAll('button');
+    if (message) {
+      block.textContent = message;
+      block.classList.remove('hidden');
+      buttons.forEach((btn) => { btn.disabled = true; });
+    } else {
+      block.textContent = '';
+      block.classList.add('hidden');
+      buttons.forEach((btn) => { btn.disabled = false; });
+    }
+    return message;
+  }
+
   function resetNotify() {
     $('oi-area').classList.remove('hidden');
     $('oi-confirm').classList.add('hidden');
     $('oi-success').classList.add('hidden');
+    applySendBlock(currentPatient?.phoneRaw);
   }
 
   // ── Top nav (Patient / Réponses / Historique) ───────────────────────────────
@@ -506,10 +538,17 @@
     $('hist-list').replaceChildren();
     $('conf-badge').classList.add('hidden');
     $('conf-badge').textContent = '0';
-    for (const id of ['up-name', 'oi-name', 'oo-name', 'so-name', 'oi-confirm-text']) {
+    for (const id of ['up-name', 'oi-name', 'oo-name', 'so-name', 'ld-name', 'np-name', 'oi-confirm-text']) {
       const el = $(id);
-      if (el) el.textContent = id === 'oi-confirm-text' ? '' : '';
+      if (el) el.textContent = '';
     }
+    const phoneBlock = $('oi-phone-block');
+    if (phoneBlock) {
+      phoneBlock.textContent = '';
+      phoneBlock.classList.add('hidden');
+    }
+    $('ld-name-row')?.classList.add('hidden');
+    $('np-name-row')?.classList.add('hidden');
     shadow.querySelectorAll('.lang-badge').forEach((el) => {
       el.textContent = '';
     });
@@ -874,8 +913,14 @@
     host.hidden = true;
     panelOpen = false;
     panel.classList.remove('open');
+    clearTimeout(settleTimer);
+    settleTimer = 0;
+    clearBurstTimers();
+    pendingBurstFns = null;
+    if (gate) gate.reset();
     clearSensitiveUi();
     currentPatient = null;
+    fileWasOpen = false;
     sendToBackground({ type: 'PATIENT_CLEARED' });
   }
 
@@ -884,13 +929,12 @@
     host.hidden = false;
     lastActivityAt = Date.now();
     idleExpired = false;
-    const calls = planPatientSync();
-    calls.push(() => fetchConfirmations());
-    if (document.visibilityState === 'hidden') {
-      deferredBurst = calls;
-      return;
-    }
-    scheduleCalls(calls, { leadMs: Poll ? Poll.unlockLeadMs(Math.random) : 0 });
+    onPatientChanged({ leadMs: Poll ? Poll.unlockLeadMs(Math.random()) : 0 });
+    const wait = (Poll ? Poll.unlockLeadMs(Math.random()) : 0) + 800;
+    setTimeout(() => {
+      if (widgetLocked || currentAssessment().locked) return;
+      fetchConfirmations();
+    }, wait);
   }
 
   function enforceLock() {
@@ -1111,6 +1155,15 @@
 
   let historyRequest = 0;
 
+  function discardHistory() {
+    historyRequest += 1;
+    $('hist-list').replaceChildren();
+    const empty = $('hist-empty');
+    if (!empty) return;
+    empty.textContent = 'Chargement…';
+    empty.classList.remove('hidden');
+  }
+
   function fetchHistory(phoneRaw) {
     if (currentAssessment().locked) {
       $('hist-list').replaceChildren();
@@ -1208,6 +1261,8 @@
 
       case 'NOTIFY_SUCCESS':
         if (!sessionAllowsAction()) break;
+        if (gate.current().mode !== 'settled') break;
+        if (msg.phoneRaw && currentPatient?.phoneRaw && msg.phoneRaw !== currentPatient.phoneRaw) break;
         $('oi-area').classList.add('hidden');
         $('oi-confirm').classList.add('hidden');
         $('oi-success').classList.remove('hidden');
@@ -1216,16 +1271,33 @@
         break;
 
       case 'NOTIFY_ERROR':
+        if (msg.phoneRaw && currentPatient?.phoneRaw && msg.phoneRaw !== currentPatient.phoneRaw) break;
         resetNotify();
         if (msg.consentRevoked) {
-          if (sessionAllowsAction()) {
-            sendToBackground({ type: 'RETRY_PATIENT', patient: currentPatient, priorxUnlocked: true });
+          if (sessionAllowsAction() && currentPatient) {
+            sendToBackground({
+              type: 'RETRY_PATIENT',
+              patient: currentPatient,
+              priorxUnlocked: true,
+              quiet: true,
+            });
           }
-        } else {
-          $('err-msg').textContent = msg.error || '';
-          showView('error');
-          setDot('red');
+          break;
         }
+        if (msg.smsOptOut && currentPatient) {
+          applyState({
+            state: 'SMS_OPT_OUT',
+            patient: currentPatient,
+            phoneRaw: currentPatient.phoneRaw,
+            lookupToken: currentPatient.lookupToken,
+            smsOptOut: true,
+            status: msg.status || 409,
+          });
+          break;
+        }
+        $('err-msg').textContent = msg.error || 'L\'envoi n\'a pas abouti. Réessayez dans un instant.';
+        showView('error');
+        setDot('red');
         break;
 
       case 'TOGGLE_WIDGET':
@@ -1235,21 +1307,56 @@
     }
   });
 
+  function livePatient(msg) {
+    const fromMsg = msg.patient || {};
+    const phone = msg.phoneRaw || fromMsg.phoneRaw || '';
+    let live = { lastName: '', firstName: '', phoneRaw: '', user: '', language: 'FR' };
+    try {
+      live = readPatientFromDOM();
+    } catch {
+      live = { lastName: '', firstName: '', phoneRaw: '', user: '', language: 'FR' };
+    }
+    const sameFile = !phone || !live.phoneRaw || live.phoneRaw === phone;
+    const source = sameFile ? live : fromMsg;
+    const languageSource = sameFile ? live.language : fromMsg.language;
+    return {
+      lastName: source.lastName || fromMsg.lastName || '',
+      firstName: source.firstName || fromMsg.firstName || '',
+      phoneRaw: phone || (sameFile ? live.phoneRaw : '') || '',
+      user: (sameFile && live.user) || fromMsg.user || '',
+      language: languageSource === 'EN' ? 'EN' : 'FR',
+      lookupToken: msg.lookupToken,
+    };
+  }
+
   function applyState(msg) {
     if (currentAssessment().locked) return;
+
+    if (msg.state === 'NO_PATIENT') {
+      if (gate.current().mode !== 'empty') return;
+      showView('no-patient'); setDot('');
+      return;
+    }
+
+    if (msg.state === 'LOADING') {
+      if (!gate.matchesLookup(msg)) return;
+      showLoading(livePatient(msg));
+      return;
+    }
+
+    // Send buttons and the consent prompt wait until this lookup token and
+    // this phone are still the file on screen. A late reply is ignored.
+    const accepted = gate.acceptLookup(msg);
+    if (!accepted.ok) return;
+
     $('oi-reinscription').classList.add('hidden');
     smsOptOutActive = false;
-    const p = msg.patient;
+    const p = livePatient(msg);
+    currentPatient = p;
 
     switch (msg.state) {
-      case 'NO_PATIENT':
-        showView('no-patient'); setDot('');
-        break;
-      case 'LOADING':
-        showView('loading'); setDot('');
-        break;
       case 'NO_PHONE':
-        showView('no-phone'); setDot('orange');
+        showNoPhone(p);
         break;
       case 'UNKNOWN':
         noteApiStatus(200);
@@ -1277,8 +1384,10 @@
         break;
       case 'ERROR':
         noteApiStatus(msg.status);
-        $('err-msg').textContent = msg.error || '';
+        $('err-msg').textContent = msg.error || 'Impossible de vérifier le consentement. Réessayez dans un instant.';
         showView('error'); setDot('red');
+        break;
+      default:
         break;
     }
   }
@@ -1290,6 +1399,9 @@
 
   $('oi-area').querySelectorAll('[data-notify-type]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      if (gate.current().mode !== 'settled') return;
+      if (Patient.phoneBlockedMessage(currentPatient?.phoneRaw)) return;
       pendingNotifyType = btn.dataset.notifyType;
       $('oi-confirm-text').textContent = NOTIFY_LABELS[pendingNotifyType] || NOTIFY_LABELS.ready;
       $('oi-area').classList.add('hidden');
@@ -1299,6 +1411,8 @@
 
   $('btn-send-yes').addEventListener('click', () => {
     if (!sessionAllowsAction()) return;
+    if (gate.current().mode !== 'settled') return;
+    if (Patient.phoneBlockedMessage(currentPatient?.phoneRaw)) return;
     if (currentPatient) {
       currentPatient = {
         ...currentPatient,
@@ -1336,8 +1450,10 @@
   $('btn-change').addEventListener('click', () => showView('unknown'));
 
   $('btn-retry').addEventListener('click', () => {
-    showView('loading');
-    sendToBackground({ type: 'RETRY_PATIENT' });
+    if (!sessionAllowsAction()) return;
+    gate.force(readPatientFromDOM(), Date.now());
+    showLoading(readPatientFromDOM());
+    onPatientChanged();
   });
 
   $('btn-options').addEventListener('click', () => {
@@ -1346,41 +1462,84 @@
 
   function saveConsent(consent) {
     if (!sessionAllowsAction()) return;
-    showView('loading'); setDot('');
+    if (gate.current().mode !== 'settled') return;
+    const saved = { ...currentPatient };
+    showLoading(saved);
     sendToBackground({
       type: 'CONSENT_SAVE',
       priorxUnlocked: true,
-      data: { consent, recordedBy: currentPatient?.user || 'unknown', patient: currentPatient },
+      data: { consent, recordedBy: saved.user || 'unknown', patient: saved },
     }, response => {
+      if (gate.current().lookupToken !== saved.lookupToken) return;
       if (response?.smsOptOut) {
         applyState({
           state: 'SMS_OPT_OUT',
-          patient: currentPatient,
+          patient: saved,
+          phoneRaw: saved.phoneRaw,
+          lookupToken: saved.lookupToken,
           smsOptOut: true,
           status: response.status || 409,
         });
         return;
       }
       if (response?.ok) return;
-      $('err-msg').textContent = response?.error || '';
+      $('err-msg').textContent = response?.error || 'Impossible d\'enregistrer le consentement. Réessayez dans un instant.';
       showView('error'); setDot('red');
     });
   }
 
   // ── Patient detection ──────────────────────────────────────────────────────
+  // Priorx fills BA01_LastName, BA01_FirstName, BA01_Info2, and BA01_language
+  // in separate steps. patient-watch.js waits until that snapshot sits still,
+  // then one consent lookup is sent for that phone. Buttons stay hidden until
+  // the matching reply arrives.
 
+  const Patient = globalThis.NotiRxPatient;
+  const gate = Patient.createPatientGate();
   let currentPatient = null;
+  let fileWasOpen = false;
+  let settleTimer = 0;
+  const watchedFields = new WeakSet();
 
   function readPatientFromDOM() {
-    const lastName  = document.getElementById('BA01_LastName')?.textContent?.trim() || '';
-    const firstName = (document.getElementById('BA01_FirstName')?.textContent?.trim() || '').replace(/^,\s*/, '');
-    const info2     = document.getElementById('BA01_Info2')?.textContent?.trim() || '';
-    const user      = document.getElementById('LoginName1')?.textContent?.trim() || '';
-    const phoneRaw  = info2.split(' - ')[0].trim().replace(/\D/g, '');
-    // Confirmed id: #BA01_language in PRIORX_LANGUAGE_SELECTORS (priorx-language.js).
-    // Missing or unreadable language becomes FR and does not block the send.
-    const language = Lang ? Lang.readPatientLanguage(document) : 'FR';
-    return { lastName, firstName, phoneRaw, user, language };
+    return Patient.readPatientFields(document, (doc) => (
+      Lang ? Lang.readPatientLanguage(doc) : 'FR'
+    ));
+  }
+
+  function showLoading(patient) {
+    smsOptOutActive = false;
+    const named = Boolean(patient && (patient.lastName || patient.firstName));
+    $('ld-name-row').classList.toggle('hidden', !named);
+    setName('ld-name', named ? patient : null);
+    if (!named) {
+      shadow.querySelectorAll('.lang-badge').forEach((el) => { el.textContent = ''; });
+    }
+    showView('loading');
+    setDot('');
+  }
+
+  function showNoPhone(patient) {
+    const named = Boolean(patient && (patient.lastName || patient.firstName));
+    $('np-name-row').classList.toggle('hidden', !named);
+    setName('np-name', named ? patient : null);
+    showView('no-phone');
+    setDot('orange');
+  }
+
+  function refreshVisibleName(patient) {
+    if (!patient) return;
+    for (const id of ['ld-name', 'np-name', 'up-name', 'oi-name', 'oo-name', 'so-name']) {
+      setName(id, patient);
+    }
+  }
+
+  function armSettle(waitMs) {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      settleTimer = 0;
+      onPatientChanged();
+    }, Math.max(30, waitMs || 0));
   }
 
   function planPatientSync() {
@@ -1388,67 +1547,103 @@
       if (!widgetLocked) enforceLock();
       return [];
     }
-    const patient = readPatientFromDOM();
-    if (!patient.lastName && !patient.firstName) {
+    const view = gate.note(readPatientFromDOM(), Date.now());
+    if (view.mode === 'settling') {
+      clearBurstTimers();
+      pendingBurstFns = null;
+      showLoading(view.patient);
+      const visible = Boolean(view.patient && (view.patient.lastName || view.patient.firstName || view.patient.phoneRaw));
+      currentPatient = visible ? view.patient : null;
+      if (visible) fileWasOpen = true;
+      discardHistory();
+      armSettle(view.waitMs);
+      return [];
+    }
+    clearTimeout(settleTimer);
+    settleTimer = 0;
+    if (view.mode === 'empty') {
+      const hadPatient = fileWasOpen || currentPatient !== null;
       currentPatient = null;
+      fileWasOpen = false;
+      smsOptOutActive = false;
+      showView('no-patient');
+      setDot('');
+      if (!hadPatient) return [];
+      discardHistory();
       return [
         () => sendToBackground({ type: 'PATIENT_CLEARED' }),
         () => fetchHistory(''),
       ];
     }
-    if (
-      currentPatient &&
-      currentPatient.lastName === patient.lastName &&
-      currentPatient.firstName === patient.firstName &&
-      currentPatient.phoneRaw === patient.phoneRaw
-    ) {
-      if (currentPatient.language !== patient.language) {
-        currentPatient = patient;
-        setLanguageBadge(patient.language);
-      }
+    if (view.mode === 'no-phone') {
+      currentPatient = view.patient;
+      fileWasOpen = true;
+      smsOptOutActive = false;
+      showNoPhone(view.patient);
       return [];
     }
-    currentPatient = patient;
-    return [
-      () => {
-        if (currentAssessment().locked) return;
-        sendToBackground({ type: 'PATIENT_CHANGED', data: patient, priorxUnlocked: true });
-      },
-      () => fetchHistory(patient.phoneRaw),
-    ];
+    if (view.startLookup) {
+      const token = view.lookupToken;
+      const snapshot = { ...view.patient, lookupToken: token };
+      currentPatient = snapshot;
+      fileWasOpen = true;
+      showLoading(snapshot);
+      gate.markLookupQueued(token);
+      return [
+        () => {
+          if (currentAssessment().locked) return;
+          if (gate.current().lookupToken !== token) return;
+          if (gate.current().mode !== 'awaiting' && gate.current().mode !== 'settled') return;
+          sendToBackground({ type: 'PATIENT_CHANGED', data: snapshot, priorxUnlocked: true });
+        },
+        () => {
+          if (gate.current().lookupToken !== token) return;
+          fetchHistory(snapshot.phoneRaw);
+        },
+      ];
+    }
+    if (view.patient && currentPatient) {
+      const languageChanged = currentPatient.language !== view.patient.language;
+      const nameChanged = currentPatient.lastName !== view.patient.lastName
+        || currentPatient.firstName !== view.patient.firstName;
+      currentPatient = { ...currentPatient, ...view.patient, lookupToken: view.lookupToken };
+      if (languageChanged || nameChanged) refreshVisibleName(currentPatient);
+    }
+    return [];
   }
 
-  function onPatientChanged() {
+  function onPatientChanged(options = {}) {
     const calls = planPatientSync();
     if (!calls.length) return;
     if (document.visibilityState === 'hidden') {
       deferredBurst = calls;
       return;
     }
-    scheduleCalls(calls);
+    scheduleCalls(calls, options.leadMs == null ? {} : { leadMs: options.leadMs });
   }
 
-  const nameTarget = document.getElementById('BA01_LastName');
-  if (nameTarget) {
-    const nameWatch = nameTarget.parentElement || nameTarget;
-    new MutationObserver(onPatientChanged)
-      .observe(nameWatch, { childList: true, subtree: true, characterData: true });
+  function watchField(el) {
+    if (!el || watchedFields.has(el)) return;
+    watchedFields.add(el);
+    new MutationObserver(() => onPatientChanged())
+      .observe(el, { childList: true, subtree: true, characterData: true });
   }
 
-  const info2Target = document.getElementById('BA01_Info2');
-  if (info2Target) {
-    new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
-      .observe(info2Target, { childList: true, subtree: true, characterData: true });
-  }
-
-  if (Lang) {
+  function bindFields() {
+    for (const id of ['BA01_LastName', 'BA01_FirstName', 'BA01_Info2', 'LoginName1', 'BA01_language']) {
+      watchField(document.getElementById(id));
+    }
+    if (!Lang) return;
     for (const selector of Lang.PRIORX_LANGUAGE_SELECTORS) {
-      const el = document.querySelector(selector);
-      if (!el) continue;
-      new MutationObserver(() => { if (currentPatient) onPatientChanged(); })
-        .observe(el, { childList: true, subtree: true, characterData: true });
+      try {
+        watchField(document.querySelector(selector));
+      } catch {
+        // A bad selector must not stop the name and phone watchers.
+      }
     }
   }
+
+  bindFields();
 
   for (const eventName of ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown']) {
     document.addEventListener(eventName, noteActivity, true);
@@ -1457,7 +1652,12 @@
   let lockTimer = 0;
   new MutationObserver(() => {
     clearTimeout(lockTimer);
-    lockTimer = setTimeout(enforceLock, 50);
+    lockTimer = setTimeout(() => {
+      bindFields();
+      const wasLocked = widgetLocked;
+      const assessment = enforceLock();
+      if (!assessment.locked && !wasLocked) onPatientChanged();
+    }, 50);
   }).observe(document.documentElement, {
     subtree: true,
     childList: true,

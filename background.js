@@ -10,6 +10,7 @@ import {
   notifySend,
 } from './api-contract.mjs';
 import { consentSaveBlockedBySms, smsOptOutFromLookup } from './consent-opt-out.mjs';
+import { describeRequestFailure, phoneBlockedMessage } from './notify-errors.mjs';
 import { pickRuntimeConfig } from './runtime-config.mjs';
 
 // Keyed by tabId — current patient and consent for that Priorx tab.
@@ -155,6 +156,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+function lookupStillCurrent(tabId, seq, patient) {
+  if (consentLookupSeq[tabId] !== seq) return false;
+  const current = tabState[tabId]?.patient;
+  if (!current || !patient) return false;
+  if ((current.phoneRaw || '') !== (patient.phoneRaw || '')) return false;
+  if (patient.lookupToken != null && current.lookupToken != null
+      && current.lookupToken !== patient.lookupToken) {
+    return false;
+  }
+  return true;
+}
+
+function stateMessage(state, patient, extra = {}) {
+  return {
+    type: 'STATE_UPDATE',
+    state,
+    patient,
+    lookupToken: patient?.lookupToken ?? null,
+    phoneRaw: patient?.phoneRaw || '',
+    ...extra,
+  };
+}
+
 async function handlePatientChanged(tabId, patient, options = {}) {
   const quiet = options.quiet === true;
   const seq = (consentLookupSeq[tabId] || 0) + 1;
@@ -168,39 +192,41 @@ async function handlePatientChanged(tabId, patient, options = {}) {
   // A quiet refresh keeps the ARRÊT notice on screen while it rechecks.
   // Showing Vérification… on each poll would flash the panel.
   if (!quiet) {
-    broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'LOADING', patient });
+    broadcastToPanel(tabId, stateMessage('LOADING', patient));
   }
 
   if (!patient.phoneRaw || patient.phoneRaw.length < 10) {
-    broadcastToPanel(tabId, { type: 'STATE_UPDATE', state: 'NO_PHONE', patient });
+    if (!lookupStillCurrent(tabId, seq, patient)) return;
+    broadcastToPanel(tabId, stateMessage('NO_PHONE', patient));
     return;
   }
 
   try {
     const req = consentLookup(patient.phoneRaw);
     const result = await apiRequest(req.method, req.path, req.body);
-    if (consentLookupSeq[tabId] !== seq) return;
+    if (!lookupStillCurrent(tabId, seq, patient)) return;
     const consent = result.consent;
     tabState[tabId].consent = consent;
     const smsOptOut = smsOptOutFromLookup(result);
 
-    broadcastToPanel(tabId, {
-      type: 'STATE_UPDATE',
-      state: smsOptOut ? 'SMS_OPT_OUT' : consentToState(consent),
+    broadcastToPanel(tabId, stateMessage(
+      smsOptOut ? 'SMS_OPT_OUT' : consentToState(consent),
       patient,
-      consentDate: result.consent_date || null,
-      needsReinscription: result.needs_reinscription || false,
-      smsOptOut,
-    });
+      {
+        consentDate: result.consent_date || null,
+        needsReinscription: result.needs_reinscription || false,
+        smsOptOut,
+      },
+    ));
   } catch (err) {
-    if (consentLookupSeq[tabId] !== seq) return;
+    if (!lookupStillCurrent(tabId, seq, patient)) return;
     if (quiet) return;
-    broadcastToPanel(tabId, {
-      type: 'STATE_UPDATE',
-      state: 'ERROR',
-      error: err.message,
+    const failure = describeRequestFailure(err, 'lookup');
+    console.warn('[NotiRx] consent lookup failed', err.status || 0);
+    broadcastToPanel(tabId, stateMessage('ERROR', patient, {
+      error: failure.message,
       status: err.status || 0,
-    });
+    }));
   }
 }
 
@@ -216,26 +242,20 @@ async function handleConsentSave(tabId, { consent, recordedBy, patient: msgPatie
     });
     await apiRequest(req.method, req.path, req.body);
     if (tabState[tabId]) tabState[tabId].consent = consent;
-    broadcastToPanel(tabId, {
-      type: 'STATE_UPDATE',
-      state: consentToState(consent),
-      patient,
-    });
+    broadcastToPanel(tabId, stateMessage(consentToState(consent), patient));
     sendResponse({ ok: true });
   } catch (err) {
     if (consentSaveBlockedBySms(err.status, consent)) {
       if (tabState[tabId]) tabState[tabId].consent = 'no';
-      broadcastToPanel(tabId, {
-        type: 'STATE_UPDATE',
-        state: 'SMS_OPT_OUT',
-        patient,
+      broadcastToPanel(tabId, stateMessage('SMS_OPT_OUT', patient, {
         smsOptOut: true,
         status: 409,
-      });
+      }));
       sendResponse({ ok: false, smsOptOut: true, status: 409 });
       return;
     }
-    sendResponse({ ok: false, error: err.message, status: err.status || 0 });
+    const failure = describeRequestFailure(err, 'consent');
+    sendResponse({ ok: false, error: failure.message, status: err.status || 0 });
   }
 }
 
@@ -248,6 +268,13 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
   const patient = tabState[tabId]?.patient ?? msgPatient;
   if (!patient) return sendResponse({ ok: false, error: 'No patient' });
 
+  const blocked = phoneBlockedMessage(patient.phoneRaw);
+  if (blocked) {
+    broadcastToPanel(tabId, { type: 'NOTIFY_ERROR', error: blocked });
+    sendResponse({ ok: false, error: blocked });
+    return;
+  }
+
   try {
     const req = notifySend({
       phoneNumber: patient.phoneRaw,
@@ -256,13 +283,33 @@ async function handleNotifySend(tabId, sendResponse, msgPatient, messageType) {
       language: messageLanguage(msgPatient, patient),
     });
     const result = await apiRequest(req.method, req.path, req.body);
-    broadcastToPanel(tabId, { type: 'NOTIFY_SUCCESS', messageSid: result.message_sid });
+    broadcastToPanel(tabId, {
+      type: 'NOTIFY_SUCCESS',
+      messageSid: result.message_sid,
+      phoneRaw: patient.phoneRaw,
+    });
     sendResponse({ ok: true });
   } catch (err) {
-    const revoked = err.message.includes('403');
-    if (revoked && tabState[tabId]) tabState[tabId].consent = 'no';
-    broadcastToPanel(tabId, { type: 'NOTIFY_ERROR', error: err.message, consentRevoked: revoked });
-    sendResponse({ ok: false, error: err.message });
+    const failure = describeRequestFailure(err, 'notify');
+    console.warn('[NotiRx] notify failed', err.status || 0);
+    if (failure.consentRevoked && tabState[tabId]) tabState[tabId].consent = 'no';
+    if (failure.smsOptOut) {
+      if (tabState[tabId]) tabState[tabId].consent = 'no';
+      broadcastToPanel(tabId, stateMessage('SMS_OPT_OUT', patient, {
+        smsOptOut: true,
+        status: err.status || 409,
+      }));
+      sendResponse({ ok: false, smsOptOut: true, error: failure.message, status: err.status || 409 });
+      return;
+    }
+    broadcastToPanel(tabId, {
+      type: 'NOTIFY_ERROR',
+      error: failure.message,
+      consentRevoked: failure.consentRevoked,
+      mayHaveSent: failure.mayHaveSent,
+      phoneRaw: patient.phoneRaw,
+    });
+    sendResponse({ ok: false, error: failure.message, status: err.status || 0 });
   }
 }
 
@@ -273,7 +320,12 @@ async function handleConfirmationsList(sendResponse) {
     const confirmations = Array.isArray(result.confirmations) ? result.confirmations : [];
     sendResponse({ ok: true, status: 200, confirmations });
   } catch (err) {
-    sendResponse({ ok: false, status: err.status || 0, error: err.message });
+    console.warn('[NotiRx] confirmations failed', err.status || 0);
+    sendResponse({
+      ok: false,
+      status: err.status || 0,
+      error: 'Impossible de charger les confirmations.',
+    });
   }
 }
 
@@ -307,9 +359,12 @@ async function handleConfirmationDismiss(confirmationId, sendResponse) {
     console.warn("[NotiRx] Fait : échec de l'enregistrement", {
       confirmationId,
       status: err.status || 0,
-      error: err.message,
     });
-    sendResponse({ ok: false, status: err.status || 0, error: err.message });
+    sendResponse({
+      ok: false,
+      status: err.status || 0,
+      error: 'Impossible d\'enregistrer cette réponse.',
+    });
   }
 }
 

@@ -5,13 +5,14 @@
 // #BA01_Language does not match. The span's text is read.
 //
 // An empty span is skipped. A small field next to BA01_LastName whose whole
-// text is exactly FR or EN is the fallback. Anything else, including a missing
-// or unreadable field, becomes FR. A send is never blocked because the
+// text is exactly FR, EN, or (AN) is the fallback. Anything else, including a
+// missing or unreadable field, becomes FR. A send is never blocked because the
 // language could not be read.
 //
-// The value sent to the server is only EN or FR. EN, ENG, ANGLAIS, and ENGLISH
-// (any capitalization, surrounding spaces ignored) become EN. The backend uses
-// English for EN and French for anything else.
+// The value sent to the server is only EN or FR. Priorx shows English as
+// "(AN)" (anglais), not "(EN)". AN, ANG, EN, ENG, ANGLAIS, and ENGLISH become
+// EN, with or without parentheses and surrounding spaces. The backend uses
+// English for EN and French for anything else. The extension sends EN, not AN.
 
 (function (root, factory) {
   const api = factory();
@@ -24,11 +25,21 @@
     '#BA01_language',
   ];
 
-  const ENGLISH_TOKENS = new Set(['EN', 'ENG', 'ANGLAIS', 'ENGLISH']);
+  const ENGLISH_TOKENS = new Set(['EN', 'ENG', 'ANG', 'AN', 'ANGLAIS', 'ENGLISH']);
+
+  function languageToken(raw) {
+    return String(raw ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/^[^A-ZÀ-ÿ]+|[^A-ZÀ-ÿ]+$/g, '');
+  }
 
   function normalizePatientLanguage(raw) {
-    const token = String(raw ?? '').trim().toUpperCase();
+    const token = languageToken(raw);
     if (ENGLISH_TOKENS.has(token)) return 'EN';
+    const upper = String(raw ?? '').toUpperCase();
+    const paren = upper.match(/\(\s*([A-ZÀ-ÿ]+)\s*\)/);
+    if (paren && ENGLISH_TOKENS.has(paren[1])) return 'EN';
     return 'FR';
   }
 
@@ -72,7 +83,11 @@
     } catch {
       return null;
     }
-    if (/^(FR|EN)$/i.test(text)) return text.toUpperCase() === 'EN' ? 'EN' : 'FR';
+    // A neighbouring field counts only when its whole text is FR, EN, or AN
+    // (Priorx writes English as "(AN)"). Longer words such as ENGLISH do not.
+    if (/^\(?\s*(FR|EN|AN)\s*\)?$/i.test(text)) {
+      return /^FR$/i.test(text.replace(/[()\s]/g, '')) ? 'FR' : 'EN';
+    }
     return null;
   }
 

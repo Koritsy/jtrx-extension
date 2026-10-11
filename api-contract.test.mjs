@@ -169,13 +169,14 @@ test('manifest grants storage, this Priorx host, and the API Gateway host', () =
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.3.4');
+  assert.equal(manifest.version, '1.3.5');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'priorx-search.js',
     'priorx-lock.js',
     'priorx-language.js',
     'poll-schedule.js',
     'confirmation-list.js',
+    'patient-watch.js',
     'content.js',
   ]);
   assert.equal(manifest.minimum_chrome_version, '109');
@@ -238,10 +239,12 @@ test('manifest host_permissions cover the default API host', () => {
 test('extension source no longer intercepts page requests or reads config.js', () => {
   const background = readFileSync(new URL('./background.js', import.meta.url), 'utf8');
   const content = readFileSync(new URL('./content.js', import.meta.url), 'utf8');
+  const fields = readFileSync(new URL('./patient-watch.js', import.meta.url), 'utf8');
   const testPage = readFileSync(new URL('./test.html', import.meta.url), 'utf8');
 
   for (const id of ['BA01_LastName', 'BA01_FirstName', 'BA01_Info2', 'LoginName1']) {
-    assert.equal(content.includes(`getElementById('${id}')`), true, id);
+    assert.equal(fields.includes(`getElementById('${id}')`), true, id);
+    assert.equal(content.includes(id), true, id);
   }
   assert.equal(content.includes('/4502812786.Web/'), true);
   assert.equal(content.includes('Réponses'), true);
@@ -258,6 +261,13 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('host.hidden = true'), true);
   assert.equal(content.includes('lang-badge'), true);
   assert.equal(content.includes('readPatientLanguage'), true);
+  assert.equal(content.includes('createPatientGate'), true);
+  assert.equal(content.includes('acceptLookup'), true);
+  assert.equal(content.includes('lookupToken'), true);
+  assert.equal(content.includes('id="ld-name"'), true);
+  assert.equal(content.includes('Vérification…'), true);
+  assert.equal(content.includes('if (currentPatient) onPatientChanged'), false);
+  assert.equal(fields.includes('lookupToken'), true);
   assert.equal(content.includes('PRIORX_LANGUAGE_SELECTORS'), true);
   assert.equal(content.includes('chrome.runtime.id'), true);
   assert.equal(content.includes('Extension context invalidated'), true);
@@ -288,6 +298,11 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(background.includes('patient.firstName'), false);
   assert.equal(background.includes('patient_name'), false);
   assert.equal(background.includes('language: messageLanguage(msgPatient, patient)'), true);
+  assert.equal(background.includes('describeRequestFailure'), true);
+  assert.equal(background.includes('lookupStillCurrent'), true);
+  assert.equal(background.includes('phoneBlockedMessage'), true);
+  assert.equal(background.includes('error: failure.message'), true);
+  assert.equal(background.includes('error: err.message'), false);
   assert.equal(background.includes('Priorx est verrouillé.'), true);
   assert.equal(background.includes('MESSAGES_HISTORY'), true);
   assert.equal(background.includes("L'historique n'est pas disponible. Mettez à jour le serveur avec cette extension."), true);
@@ -317,7 +332,9 @@ test('store zip lists the widget files and leaves tests out', () => {
     'background.js',
     'poll-schedule.js',
     'confirmation-list.js',
+    'patient-watch.js',
     'consent-opt-out.mjs',
+    'notify-errors.mjs',
     'content.js',
     'api-contract.mjs',
     'runtime-config.mjs',

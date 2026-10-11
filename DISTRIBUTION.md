@@ -48,7 +48,7 @@ Do not write that the extension encrypts data itself, that texts stay in Canada,
 
 ## Version
 
-The manifest version is **1.3.4**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy. After an update, press F5 on the Priorx tab.
+The manifest version is **1.3.5**. Chrome and Edge accept only a higher version on each upload: one to four numbers separated by dots, each from 0 to 65535. Bump `version` in `manifest.json`, then pack and upload. The browser installs that upload on its own for anyone who already has the store copy. After an update, press F5 on the Priorx tab.
 
 ## Icons
 
@@ -62,9 +62,9 @@ From the extension folder:
 sh scripts/pack-extension.sh
 ```
 
-The script stops unless `content_scripts.matches` is exactly `https://4502812786.priorx.ca/*` and `host_permissions` is that host plus `https://*.execute-api.ca-central-1.amazonaws.com/*`. It writes `dist/notirx-1.3.4.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
+The script stops unless `content_scripts.matches` is exactly `https://4502812786.priorx.ca/*` and `host_permissions` is that host plus `https://*.execute-api.ca-central-1.amazonaws.com/*`. It writes `dist/notirx-1.3.5.zip` (the version in the name follows the manifest). The zip is not uploaded anywhere by the script.
 
-The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `priorx-language.js`, `poll-schedule.js`, `confirmation-list.js`, `content.js`, `api-contract.mjs`, `consent-opt-out.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
+The zip must open directly onto `manifest.json`, not onto a folder that contains `manifest.json`. The script does that. If you build the zip by hand on Windows, select these items and compress them so they sit at the top of the zip: `manifest.json`, `background.js`, `priorx-search.js`, `priorx-lock.js`, `priorx-language.js`, `poll-schedule.js`, `confirmation-list.js`, `patient-watch.js`, `content.js`, `api-contract.mjs`, `consent-opt-out.mjs`, `notify-errors.mjs`, `runtime-config.mjs`, `options.html`, `options.js`, `managed_schema.json`, and the `icons` folder.
 
 Leave out `test.html`, the test files, `.git`, and any `config.js`.
 
@@ -93,7 +93,7 @@ Data to declare in the privacy questions: phone number, staff name when consent 
 
 ## Option 2 — Edge Add-ons
 
-Same package, separate listing, separate extension id. Use this when the pharmacy computers run Edge.
+Same package, separate listing, separate extension id. Use this when the pharmacy computers run Edge. To load the folder on Edge before a listing exists, see `README.md`: `edge://extensions`, developer mode, Load unpacked.
 
 1. Sign in to Microsoft Partner Center and open Edge Add-ons.
 2. Create an extension and upload the same zip.

@@ -53,10 +53,10 @@ function documentWith(nodes) {
 }
 
 test('english tokens become EN and everything else becomes FR', () => {
-  for (const raw of ['EN', 'en', ' En ', 'ENG', 'anglais', 'ANGLAIS', 'English']) {
+  for (const raw of ['EN', 'en', ' En ', 'ENG', 'ANG', 'AN', 'an', '(AN)', '(an)', ' (EN) ', 'anglais', 'ANGLAIS', 'English']) {
     assert.equal(language.normalizePatientLanguage(raw), 'EN', raw);
   }
-  for (const raw of ['', '   ', 'FR', 'fr', 'FRA', 'francais', 'FRANÇAIS', 'ES', '1', null, undefined]) {
+  for (const raw of ['', '   ', 'FR', 'fr', '(FR)', 'FRA', 'francais', 'FRANÇAIS', 'ES', '1', null, undefined]) {
     assert.equal(language.normalizePatientLanguage(raw), 'FR', String(raw));
   }
 });
@@ -82,14 +82,28 @@ test('an empty language span is skipped for a nearby FR or EN label', () => {
 test('the language span text is read', () => {
   const english = el({ tag: 'SPAN', id: 'BA01_language', text: 'ENG' });
   assert.equal(language.readPatientLanguage(documentWith([english])), 'EN');
+  const priorxEnglish = el({ tag: 'SPAN', id: 'BA01_language', text: '(AN)' });
+  assert.equal(language.readPatientLanguage(documentWith([priorxEnglish])), 'EN');
+  const ang = el({ tag: 'SPAN', id: 'BA01_language', text: 'ANG' });
+  assert.equal(language.readPatientLanguage(documentWith([ang])), 'EN');
   const french = el({ tag: 'SPAN', id: 'BA01_language', text: 'FR' });
   assert.equal(language.readPatientLanguage(documentWith([french])), 'FR');
+  const frenchParen = el({ tag: 'SPAN', id: 'BA01_language', text: '(FR)' });
+  assert.equal(language.readPatientLanguage(documentWith([frenchParen])), 'FR');
 });
 
 test('a small FR or EN field next to the name is used when no id matches', () => {
   const name = el({ id: 'BA01_LastName', text: 'Exemple' });
   const lang = el({ text: 'EN' });
   const parent = el({ children: [name, lang] });
+  assert.equal(language.readPatientLanguage(documentWith([parent])), 'EN');
+});
+
+test('a neighbouring (AN) label is English when the language span is empty', () => {
+  const name = el({ id: 'BA01_LastName', text: 'Exemple' });
+  const empty = el({ id: 'BA01_language', text: '' });
+  const lang = el({ text: '(AN)' });
+  const parent = el({ children: [name, empty, lang] });
   assert.equal(language.readPatientLanguage(documentWith([parent])), 'EN');
 });
 
