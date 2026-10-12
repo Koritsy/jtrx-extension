@@ -5,9 +5,12 @@
 // does not change which elements are read. If BA01_LastName is absent the
 // script returns without drawing anything. Page network traffic is left untouched.
 //
-// Priorx fills those fields in separate steps. The consent prompt and the send
-// buttons stay hidden until the name and phone have stopped changing and the
-// lookup for that phone has returned. A reply for an earlier file is ignored.
+// Priorx fills those fields in separate steps. A name change clears the previous
+// file immediately. The consent prompt and the send buttons stay hidden until
+// the new name and phone have stopped changing, the phone is not still the
+// previous file's number, and the lookup for that phone has returned. A reply
+// that no longer matches the page is ignored. A text uses the phone read from
+// the page at the moment of send.
 
 (function () {
   if (!document.getElementById('BA01_LastName')) return;
@@ -255,6 +258,15 @@
           <div class="muted">⚠️ Numéro introuvable dans le dossier.</div>
         </div>
 
+        <div id="v-same-phone" class="view">
+          <div id="sp-name-row" class="name-row hidden">
+            <div id="sp-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
+          <div class="muted">Le numéro affiché est encore celui du dossier précédent.</div>
+          <button id="btn-same-phone" class="btn btn-ghost" style="margin-top:7px">Même numéro — vérifier</button>
+        </div>
+
         <div id="v-unknown" class="view">
           <div class="name-row">
             <div id="up-name" class="name"></div>
@@ -328,6 +340,10 @@
         </div>
 
         <div id="v-error" class="view">
+          <div id="er-name-row" class="name-row hidden">
+            <div id="er-name" class="name"></div>
+            <span class="lang-badge" title="Langue du SMS">FR</span>
+          </div>
           <div class="muted">⚠️ <span id="err-msg"></span></div>
           <button id="btn-retry" class="btn btn-ghost">Réessayer</button>
           <button id="btn-options" class="btn btn-ghost">Options</button>
@@ -403,10 +419,28 @@
 
   // ── View helpers ──────────────────────────────────────────────────────────────
 
-  const VIEWS = ['no-patient', 'loading', 'no-phone', 'unknown', 'opted-in', 'opted-out', 'sms-opt-out', 'error'];
+  const VIEWS = ['no-patient', 'loading', 'no-phone', 'same-phone', 'unknown', 'opted-in', 'opted-out', 'sms-opt-out', 'error'];
+  const VIEW_NAME_IDS = {
+    loading: 'ld-name',
+    'no-phone': 'np-name',
+    'same-phone': 'sp-name',
+    unknown: 'up-name',
+    'opted-in': 'oi-name',
+    'opted-out': 'oo-name',
+    'sms-opt-out': 'so-name',
+    error: 'er-name',
+  };
+  let activeViewName = 'no-patient';
 
   function showView(name) {
+    const previous = activeViewName;
     VIEWS.forEach(v => $(`v-${v}`)?.classList.toggle('active', v === name));
+    activeViewName = name;
+    if (name !== previous) logPatient('view', {
+      from: previous,
+      view: name,
+      nameEmpty: viewNameEmpty(name),
+    });
   }
 
   function setDot(color) {
@@ -506,6 +540,8 @@
   let lastActivityAt = Date.now();
   let idleMinutes = Lock ? Lock.DEFAULT_IDLE_LOCK_MINUTES : 5;
   let lockDebug = false;
+  let notirxDebug = false;
+  let lastPatientLog = '';
 
   function currentAssessment() {
     if (!Lock) {
@@ -533,12 +569,49 @@
     }
   }
 
+  function patientDebugOn() {
+    return lockDebug || notirxDebug;
+  }
+
+  function phoneTail(phoneRaw) {
+    const digits = String(phoneRaw || '').replace(/\D/g, '');
+    return digits ? digits.slice(-4) : '';
+  }
+
+  function viewNameEmpty(viewName) {
+    const id = VIEW_NAME_IDS[viewName];
+    if (!id) return false;
+    const el = $(id);
+    return !el || !String(el.textContent || '').trim();
+  }
+
+  function logPatient(event, detail) {
+    if (!patientDebugOn()) return;
+    const fields = detail || {};
+    const phone = fields.phoneRaw || fields.phone || '';
+    const safe = { event };
+    for (const [key, value] of Object.entries(fields)) {
+      if (key === 'phoneRaw' || key === 'phone') continue;
+      safe[key] = value;
+    }
+    if (phone) safe.phone4 = phoneTail(phone);
+    let line = '';
+    try {
+      line = JSON.stringify(safe);
+    } catch {
+      line = event;
+    }
+    if (line === lastPatientLog) return;
+    lastPatientLog = line;
+    console.info('[NotiRx patient]', safe);
+  }
+
   function clearSensitiveUi() {
     $('conf-list').replaceChildren();
     $('hist-list').replaceChildren();
     $('conf-badge').classList.add('hidden');
     $('conf-badge').textContent = '0';
-    for (const id of ['up-name', 'oi-name', 'oo-name', 'so-name', 'ld-name', 'np-name', 'oi-confirm-text']) {
+    for (const id of ['up-name', 'oi-name', 'oo-name', 'so-name', 'ld-name', 'np-name', 'sp-name', 'er-name', 'oi-confirm-text']) {
       const el = $(id);
       if (el) el.textContent = '';
     }
@@ -549,6 +622,8 @@
     }
     $('ld-name-row')?.classList.add('hidden');
     $('np-name-row')?.classList.add('hidden');
+    $('sp-name-row')?.classList.add('hidden');
+    $('er-name-row')?.classList.add('hidden');
     shadow.querySelectorAll('.lang-badge').forEach((el) => {
       el.textContent = '';
     });
@@ -919,6 +994,8 @@
     pendingBurstFns = null;
     if (gate) gate.reset();
     clearSensitiveUi();
+    showView('no-patient');
+    setDot('');
     currentPatient = null;
     fileWasOpen = false;
     sendToBackground({ type: 'PATIENT_CLEARED' });
@@ -1295,9 +1372,7 @@
           });
           break;
         }
-        $('err-msg').textContent = msg.error || 'L\'envoi n\'a pas abouti. Réessayez dans un instant.';
-        showView('error');
-        setDot('red');
+        showError(msg.error || 'L\'envoi n\'a pas abouti. Réessayez dans un instant.', currentPatient);
         break;
 
       case 'TOGGLE_WIDGET':
@@ -1307,26 +1382,50 @@
     }
   });
 
-  function livePatient(msg) {
-    const fromMsg = msg.patient || {};
-    const phone = msg.phoneRaw || fromMsg.phoneRaw || '';
+  function lookupSnapshot(msg) {
+    const fromMsg = msg?.patient || {};
+    return {
+      lastName: fromMsg.lastName || '',
+      firstName: fromMsg.firstName || '',
+      phoneRaw: String(msg?.phoneRaw || fromMsg.phoneRaw || '').replace(/\D/g, ''),
+      user: fromMsg.user || '',
+      language: fromMsg.language === 'EN' ? 'EN' : 'FR',
+      lookupToken: msg?.lookupToken,
+    };
+  }
+
+  function liveIdentity() {
     let live = { lastName: '', firstName: '', phoneRaw: '', user: '', language: 'FR' };
     try {
       live = readPatientFromDOM();
     } catch {
       live = { lastName: '', firstName: '', phoneRaw: '', user: '', language: 'FR' };
     }
-    const sameFile = !phone || !live.phoneRaw || live.phoneRaw === phone;
-    const source = sameFile ? live : fromMsg;
-    const languageSource = sameFile ? live.language : fromMsg.language;
     return {
-      lastName: source.lastName || fromMsg.lastName || '',
-      firstName: source.firstName || fromMsg.firstName || '',
-      phoneRaw: phone || (sameFile ? live.phoneRaw : '') || '',
-      user: (sameFile && live.user) || fromMsg.user || '',
-      language: languageSource === 'EN' ? 'EN' : 'FR',
-      lookupToken: msg.lookupToken,
+      lastName: live.lastName || '',
+      firstName: live.firstName || '',
+      phoneRaw: String(live.phoneRaw || '').replace(/\D/g, ''),
+      user: live.user || '',
+      language: live.language === 'EN' ? 'EN' : 'FR',
     };
+  }
+
+  function sameIdentity(a, b) {
+    if (!a || !b) return false;
+    return (a.lastName || '') === (b.lastName || '')
+      && (a.firstName || '') === (b.firstName || '')
+      && String(a.phoneRaw || '').replace(/\D/g, '') === String(b.phoneRaw || '').replace(/\D/g, '');
+  }
+
+  function verifiedLivePatient() {
+    const live = liveIdentity();
+    if (!sameIdentity(live, currentPatient)) return null;
+    return live;
+  }
+
+  function discardStale(reason, detail) {
+    logPatient('discard', { reason, ...(detail || {}) });
+    onPatientChanged();
   }
 
   function applyState(msg) {
@@ -1338,9 +1437,21 @@
       return;
     }
 
+    const snap = lookupSnapshot(msg);
+    const live = liveIdentity();
+    if (!sameIdentity(live, snap)) {
+      discardStale('lookup-dom', {
+        state: msg.state,
+        token: msg.lookupToken,
+        phone4: phoneTail(snap.phoneRaw),
+        liveNameEmpty: !(live.lastName || live.firstName),
+      });
+      return;
+    }
+
     if (msg.state === 'LOADING') {
       if (!gate.matchesLookup(msg)) return;
-      showLoading(livePatient(msg));
+      showLoading({ ...live, lookupToken: msg.lookupToken });
       return;
     }
 
@@ -1349,10 +1460,27 @@
     const accepted = gate.acceptLookup(msg);
     if (!accepted.ok) return;
 
+    const again = liveIdentity();
+    if (!sameIdentity(again, snap)) {
+      discardStale('lookup-dom-after-accept', {
+        state: msg.state,
+        token: msg.lookupToken,
+        phone4: phoneTail(snap.phoneRaw),
+      });
+      return;
+    }
+
     $('oi-reinscription').classList.add('hidden');
     smsOptOutActive = false;
-    const p = livePatient(msg);
+    const p = { ...again, lookupToken: msg.lookupToken };
     currentPatient = p;
+
+    if (!p.lastName && !p.firstName && msg.state !== 'NO_PHONE' && msg.state !== 'ERROR') {
+      logPatient('empty-name', { state: msg.state, token: msg.lookupToken, phone4: phoneTail(p.phoneRaw) });
+      showLoading(null);
+      onPatientChanged();
+      return;
+    }
 
     switch (msg.state) {
       case 'NO_PHONE':
@@ -1384,8 +1512,7 @@
         break;
       case 'ERROR':
         noteApiStatus(msg.status);
-        $('err-msg').textContent = msg.error || 'Impossible de vérifier le consentement. Réessayez dans un instant.';
-        showView('error'); setDot('red');
+        showError(msg.error || 'Impossible de vérifier le consentement. Réessayez dans un instant.', p);
         break;
       default:
         break;
@@ -1401,7 +1528,12 @@
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
       if (gate.current().mode !== 'settled') return;
-      if (Patient.phoneBlockedMessage(currentPatient?.phoneRaw)) return;
+      const live = verifiedLivePatient();
+      if (!live) {
+        discardStale('send-dom', { phone4: phoneTail(liveIdentity().phoneRaw) });
+        return;
+      }
+      if (Patient.phoneBlockedMessage(live.phoneRaw)) return;
       pendingNotifyType = btn.dataset.notifyType;
       $('oi-confirm-text').textContent = NOTIFY_LABELS[pendingNotifyType] || NOTIFY_LABELS.ready;
       $('oi-area').classList.add('hidden');
@@ -1412,20 +1544,25 @@
   $('btn-send-yes').addEventListener('click', () => {
     if (!sessionAllowsAction()) return;
     if (gate.current().mode !== 'settled') return;
-    if (Patient.phoneBlockedMessage(currentPatient?.phoneRaw)) return;
-    if (currentPatient) {
-      currentPatient = {
-        ...currentPatient,
-        language: Lang ? Lang.readPatientLanguage(document) : 'FR',
-      };
-      setLanguageBadge(currentPatient.language);
+    const live = verifiedLivePatient();
+    if (!live) {
+      discardStale('send-dom', { phone4: phoneTail(liveIdentity().phoneRaw) });
+      return;
     }
+    if (Patient.phoneBlockedMessage(live.phoneRaw)) return;
+    const language = Lang ? Lang.readPatientLanguage(document) : (live.language === 'EN' ? 'EN' : 'FR');
+    currentPatient = {
+      ...currentPatient,
+      ...live,
+      language,
+    };
+    setLanguageBadge(language);
     sendToBackground({
       type: 'NOTIFY_SEND',
       patient: {
-        phoneRaw: currentPatient.phoneRaw,
-        user: currentPatient.user,
-        language: currentPatient.language,
+        phoneRaw: live.phoneRaw,
+        user: live.user || currentPatient.user || '',
+        language,
       },
       messageType: pendingNotifyType,
       priorxUnlocked: true,
@@ -1449,12 +1586,16 @@
 
   $('btn-change').addEventListener('click', () => showView('unknown'));
 
-  $('btn-retry').addEventListener('click', () => {
+  function forceLiveLookup() {
     if (!sessionAllowsAction()) return;
-    gate.force(readPatientFromDOM(), Date.now());
-    showLoading(readPatientFromDOM());
+    const live = readPatientFromDOM();
+    gate.force(live, Date.now());
+    showLoading(live);
     onPatientChanged();
-  });
+  }
+
+  $('btn-retry').addEventListener('click', forceLiveLookup);
+  $('btn-same-phone').addEventListener('click', forceLiveLookup);
 
   $('btn-options').addEventListener('click', () => {
     sendToBackground({ type: 'OPEN_OPTIONS' });
@@ -1463,7 +1604,12 @@
   function saveConsent(consent) {
     if (!sessionAllowsAction()) return;
     if (gate.current().mode !== 'settled') return;
-    const saved = { ...currentPatient };
+    const live = verifiedLivePatient();
+    if (!live) {
+      discardStale('consent-dom', { phone4: phoneTail(liveIdentity().phoneRaw) });
+      return;
+    }
+    const saved = { ...currentPatient, ...live, lookupToken: currentPatient.lookupToken };
     showLoading(saved);
     sendToBackground({
       type: 'CONSENT_SAVE',
@@ -1471,6 +1617,11 @@
       data: { consent, recordedBy: saved.user || 'unknown', patient: saved },
     }, response => {
       if (gate.current().lookupToken !== saved.lookupToken) return;
+      const nowLive = liveIdentity();
+      if (!sameIdentity(nowLive, saved)) {
+        discardStale('consent-dom', { phone4: phoneTail(nowLive.phoneRaw) });
+        return;
+      }
       if (response?.smsOptOut) {
         applyState({
           state: 'SMS_OPT_OUT',
@@ -1483,8 +1634,7 @@
         return;
       }
       if (response?.ok) return;
-      $('err-msg').textContent = response?.error || 'Impossible d\'enregistrer le consentement. Réessayez dans un instant.';
-      showView('error'); setDot('red');
+      showError(response?.error || 'Impossible d\'enregistrer le consentement. Réessayez dans un instant.', saved);
     });
   }
 
@@ -1527,9 +1677,45 @@
     setDot('orange');
   }
 
+  function showSamePhone(patient) {
+    smsOptOutActive = false;
+    const named = Boolean(patient && (patient.lastName || patient.firstName));
+    $('sp-name-row').classList.toggle('hidden', !named);
+    setName('sp-name', named ? patient : null);
+    showView('same-phone');
+    setDot('orange');
+  }
+
+  function showError(message, patient) {
+    const named = Boolean(patient && (patient.lastName || patient.firstName));
+    $('er-name-row').classList.toggle('hidden', !named);
+    setName('er-name', named ? patient : null);
+    $('err-msg').textContent = message;
+    showView('error');
+    setDot('red');
+  }
+
+  function clearPreviousPatientUi() {
+    for (const id of ['up-name', 'oi-name', 'oo-name', 'so-name', 'er-name', 'oi-confirm-text']) {
+      const el = $(id);
+      if (el) el.textContent = '';
+    }
+    $('oi-area')?.classList.remove('hidden');
+    $('oi-confirm')?.classList.add('hidden');
+    $('oi-success')?.classList.add('hidden');
+    $('oi-revoke-box')?.classList.add('hidden');
+    $('oi-reinscription')?.classList.add('hidden');
+    const phoneBlock = $('oi-phone-block');
+    if (phoneBlock) {
+      phoneBlock.textContent = '';
+      phoneBlock.classList.add('hidden');
+    }
+    $('er-name-row')?.classList.add('hidden');
+  }
+
   function refreshVisibleName(patient) {
     if (!patient) return;
-    for (const id of ['ld-name', 'np-name', 'up-name', 'oi-name', 'oo-name', 'so-name']) {
+    for (const id of ['ld-name', 'np-name', 'sp-name', 'up-name', 'oi-name', 'oo-name', 'so-name', 'er-name']) {
       setName(id, patient);
     }
   }
@@ -1548,6 +1734,18 @@
       return [];
     }
     const view = gate.note(readPatientFromDOM(), Date.now());
+    logPatient('snapshot', {
+      mode: view.mode,
+      decision: view.startLookup ? 'lookup' : view.mode,
+      changed: view.changed === true,
+      token: view.lookupToken,
+      lastName: view.patient?.lastName || '',
+      firstName: view.patient?.firstName || '',
+      nameEmpty: !view.patient || !(view.patient.lastName || view.patient.firstName),
+      phoneRaw: view.patient?.phoneRaw || '',
+      view: activeViewName,
+    });
+    if (view.changed) clearPreviousPatientUi();
     if (view.mode === 'settling') {
       clearBurstTimers();
       pendingBurstFns = null;
@@ -1561,6 +1759,14 @@
     }
     clearTimeout(settleTimer);
     settleTimer = 0;
+    if (view.mode === 'same-phone') {
+      currentPatient = view.patient;
+      fileWasOpen = true;
+      smsOptOutActive = false;
+      discardHistory();
+      showSamePhone(view.patient);
+      return [];
+    }
     if (view.mode === 'empty') {
       const hadPatient = fileWasOpen || currentPatient !== null;
       currentPatient = null;
@@ -1584,21 +1790,45 @@
     }
     if (view.startLookup) {
       const token = view.lookupToken;
-      const snapshot = { ...view.patient, lookupToken: token };
+      const live = liveIdentity();
+      if (!sameIdentity(live, view.patient)) {
+        armSettle(view.waitMs || Patient.STABLE_MS);
+        return [];
+      }
+      const snapshot = { ...live, lookupToken: token, language: live.language };
       currentPatient = snapshot;
       fileWasOpen = true;
       showLoading(snapshot);
       gate.markLookupQueued(token);
+      logPatient('lookup', {
+        token,
+        lastName: snapshot.lastName,
+        firstName: snapshot.firstName,
+        nameEmpty: !(snapshot.lastName || snapshot.firstName),
+        phoneRaw: snapshot.phoneRaw,
+      });
       return [
         () => {
           if (currentAssessment().locked) return;
           if (gate.current().lookupToken !== token) return;
           if (gate.current().mode !== 'awaiting' && gate.current().mode !== 'settled') return;
-          sendToBackground({ type: 'PATIENT_CHANGED', data: snapshot, priorxUnlocked: true });
+          const nowLive = liveIdentity();
+          if (!sameIdentity(nowLive, snapshot)) {
+            gate.cancelQueuedLookup(token);
+            discardStale('lookup-before-send', { token, phone4: phoneTail(nowLive.phoneRaw) });
+            return;
+          }
+          sendToBackground({
+            type: 'PATIENT_CHANGED',
+            data: { ...snapshot, phoneRaw: nowLive.phoneRaw, user: nowLive.user || snapshot.user },
+            priorxUnlocked: true,
+          });
         },
         () => {
           if (gate.current().lookupToken !== token) return;
-          fetchHistory(snapshot.phoneRaw);
+          const nowLive = liveIdentity();
+          if (!sameIdentity(nowLive, snapshot)) return;
+          fetchHistory(nowLive.phoneRaw);
         },
       ];
     }
@@ -1666,14 +1896,16 @@
     characterData: true,
   });
 
-  chrome.storage.local.get(['idleLockMinutes', 'lockDebug'], (data) => {
+  chrome.storage.local.get(['idleLockMinutes', 'lockDebug', 'notirxDebug'], (data) => {
     if (Lock) idleMinutes = Lock.normalizeIdleLockMinutes(data?.idleLockMinutes);
     lockDebug = Boolean(data?.lockDebug);
+    notirxDebug = Boolean(data?.notirxDebug);
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !Lock) return;
-    if (changes.idleLockMinutes) idleMinutes = Lock.normalizeIdleLockMinutes(changes.idleLockMinutes.newValue);
+    if (area !== 'local') return;
+    if (Lock && changes.idleLockMinutes) idleMinutes = Lock.normalizeIdleLockMinutes(changes.idleLockMinutes.newValue);
     if (changes.lockDebug) lockDebug = Boolean(changes.lockDebug.newValue);
+    if (changes.notirxDebug) notirxDebug = Boolean(changes.notirxDebug.newValue);
   });
 
   enforceLock();

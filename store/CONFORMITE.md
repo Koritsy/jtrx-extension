@@ -1,6 +1,6 @@
 # Points qu’un réviseur peut relever
 
-Contrôle du manifeste **1.3.5** pour une fiche non répertoriée. Ce fichier ne publie rien.
+Contrôle du manifeste **1.3.6** pour une fiche non répertoriée. Ce fichier ne publie rien.
 
 | Point | État |
 |---|---|

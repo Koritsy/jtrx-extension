@@ -173,7 +173,7 @@ test('manifest grants storage, this Priorx host, and the API Gateway host', () =
   assert.equal(JSON.stringify(manifest).includes('FILL-IN-PRIORX-HOST'), false);
   assert.equal(JSON.stringify(manifest).includes('*://*/*'), false);
   assert.equal(JSON.stringify(manifest).includes('alarms'), false);
-  assert.equal(manifest.version, '1.3.5');
+  assert.equal(manifest.version, '1.3.6');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'priorx-search.js',
     'priorx-lock.js',
@@ -325,7 +325,7 @@ test('extension source no longer intercepts page requests or reads config.js', (
   }
   assert.equal(testPage.includes('555-010-0199'), true);
   assert.equal(content.includes("type: 'NOTIFY_SEND'"), true);
-  assert.equal(content.includes('phoneRaw: currentPatient.phoneRaw'), true);
+  assert.equal(content.includes('phoneRaw: live.phoneRaw'), true);
   assert.equal(content.includes('firstName: currentPatient.firstName'), false);
 });
 

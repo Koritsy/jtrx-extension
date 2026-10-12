@@ -1,8 +1,13 @@
 // When Priorx opens a file it fills the name and the phone in separate steps.
 // On a slow PC those steps are far enough apart that a consent lookup can
 // start on the previous phone, or on an empty name. This gate waits until the
-// same name and phone have sat still, then asks for one lookup. A response is
-// applied only when its token and phone still match that lookup.
+// same name and phone have sat still, then asks for one lookup.
+//
+// A name change never times out into a lookup that still carries the previous
+// file's phone. If that phone is still on screen more than a few seconds
+// later, the gate stays on `same-phone` until the pharmacist presses
+// « Même numéro — vérifier » (gate.force). A response is applied only when
+// its token, name, and phone still match that lookup.
 
 (function (root, factory) {
   const api = factory();
@@ -11,10 +16,16 @@
   }
   root.NotiRxPatient = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  const STABLE_MS = 700;
-  // Name often updates before the phone. Keep the previous file's buttons
-  // hidden until the phone moves, or until this longer wait runs out.
+  const STABLE_MS = 500;
+  // How long a name can sit with no phone before the widget says the number
+  // is missing. This wait must not start a lookup.
   const PHONE_LAG_MS = 2000;
+  // Name changed, phone still the previous file. Never look that number up
+  // on our own. After this, the pharmacist can confirm a shared family number.
+  const SAME_PHONE_MS = 3000;
+  // 10 digits, optional leading 1, with the separators Priorx and non-DSQ
+  // files actually use (spaces, dots, dashes, parentheses).
+  const PHONE_IN_TEXT = /(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/;
 
   function fieldText(el) {
     if (!el) return '';
@@ -47,7 +58,7 @@
     } catch {
       return blank;
     }
-    const phoneRaw = info2.split(' - ')[0].trim().replace(/\D/g, '');
+    const phoneRaw = extractPhoneDigits(info2);
     let language = 'FR';
     if (typeof readLanguage === 'function') {
       try {
@@ -60,6 +71,15 @@
     return { lastName, firstName, phoneRaw, user, language };
   }
 
+  function extractPhoneDigits(info2) {
+    const match = String(info2 || '').match(PHONE_IN_TEXT);
+    if (!match) return '';
+    const digits = match[0].replace(/\D/g, '');
+    if (digits.length === 10) return digits;
+    if (digits.length === 11 && digits.startsWith('1')) return digits;
+    return '';
+  }
+
   function identityOf(patient) {
     if (!patient) return '\n\n';
     return `${patient.lastName || ''}\n${patient.firstName || ''}\n${patient.phoneRaw || ''}`;
@@ -70,7 +90,9 @@
   }
 
   function phoneUsable(phoneRaw) {
-    return String(phoneRaw || '').replace(/\D/g, '').length >= 10;
+    const digits = String(phoneRaw || '').replace(/\D/g, '');
+    if (digits.length === 10) return true;
+    return digits.length === 11 && digits.startsWith('1');
   }
 
   function copyPatient(patient, token) {
@@ -107,129 +129,179 @@
     return '';
   }
 
+  function blankPatient() {
+    return { lastName: '', firstName: '', phoneRaw: '', user: '', language: 'FR' };
+  }
+
   function createPatientGate(options = {}) {
     const stableMs = Number.isFinite(options.stableMs) ? options.stableMs : STABLE_MS;
     const phoneLagMs = Number.isFinite(options.phoneLagMs) ? options.phoneLagMs : PHONE_LAG_MS;
+    const samePhoneMs = Number.isFinite(options.samePhoneMs) ? options.samePhoneMs : SAME_PHONE_MS;
 
     let token = 0;
     let pendingKey = null;
     let pendingPatient = null;
-    let pendingHold = false;
     let since = 0;
     let committed = null;
     let queuedToken = 0;
     let mode = 'empty';
+    // Last file we actually looked up (or settled). A later name is not
+    // allowed to inherit this phone.
+    let anchor = null;
+    let nameSwitchAt = 0;
 
     function reset() {
       token += 1;
       pendingKey = null;
       pendingPatient = null;
-      pendingHold = false;
       since = 0;
       committed = null;
       queuedToken = 0;
       mode = 'empty';
+      anchor = null;
+      nameSwitchAt = 0;
     }
 
-    function waitNeeded() {
-      let need = stableMs;
-      const pending = pendingPatient;
-      if (pendingHold) need = Math.max(need, phoneLagMs);
-      if (pending && hasName(pending) && !phoneUsable(pending.phoneRaw)) {
-        need = Math.max(need, phoneLagMs);
+    function dropCommitted() {
+      if (!committed) return;
+      committed = null;
+      queuedToken = 0;
+      token += 1;
+    }
+
+    function stableRemaining(now) {
+      return Math.max(0, stableMs - (now - since));
+    }
+
+    function holdsPreviousPhone(sample) {
+      if (!sample || !anchor || !hasName(sample)) return false;
+      if (!namesDiffer(anchor, sample)) return false;
+      if (!phoneUsable(anchor.phoneRaw)) return false;
+      return String(sample.phoneRaw || '') !== '' && sample.phoneRaw === anchor.phoneRaw;
+    }
+
+    function holdRemaining(now) {
+      const switchAge = nameSwitchAt ? now - nameSwitchAt : (now - since);
+      return Math.max(stableRemaining(now), samePhoneMs - switchAge, 0);
+    }
+
+    function phoneWaitRemaining(now) {
+      return Math.max(0, Math.max(stableMs, phoneLagMs) - (now - since));
+    }
+
+    function snapshot(now, extra = {}) {
+      const display = mode === 'empty'
+        ? null
+        : (committed ? committed.patient : pendingPatient);
+      let waitMs = 0;
+      if (mode === 'settling') {
+        if (holdsPreviousPhone(pendingPatient)) waitMs = holdRemaining(now);
+        else if (pendingPatient && hasName(pendingPatient) && !phoneUsable(pendingPatient.phoneRaw)) {
+          waitMs = phoneWaitRemaining(now);
+        } else {
+          waitMs = stableRemaining(now);
+        }
       }
-      return need;
-    }
-
-    function snapshot(now) {
-      const display = mode === 'empty' ? null : (committed ? committed.patient : pendingPatient);
-      const need = waitNeeded();
-      const waitMs = mode === 'settling' ? Math.max(0, need - (now - since)) : 0;
       const startLookup = Boolean(
         committed && mode === 'awaiting' && queuedToken !== committed.token,
       );
       return {
         mode,
         waitMs,
+        changed: extra.changed === true,
         startLookup,
         allowsActions: mode === 'settled',
         lookupToken: committed ? committed.token : token,
         patient: display ? { ...display } : null,
-        phoneRaw: committed?.patient?.phoneRaw || pendingPatient?.phoneRaw || '',
+        phoneRaw: display?.phoneRaw || '',
       };
     }
 
     function note(patient, now, noteOptions = {}) {
-      const sample = patient || {
-        lastName: '', firstName: '', phoneRaw: '', user: '', language: 'FR',
-      };
+      const sample = patient || blankPatient();
       const key = identityOf(sample);
       const immediate = noteOptions.immediate === true;
+      let changed = false;
 
       if (key !== pendingKey || immediate) {
-        const previous = committed?.patient || pendingPatient;
-        const nameChanged = namesDiffer(previous, sample);
-        const phoneStillPrevious = Boolean(
-          previous && sample.phoneRaw && sample.phoneRaw === previous.phoneRaw,
-        );
-        pendingHold = !immediate && nameChanged && phoneStillPrevious;
-        if (committed && committed.key !== key) {
-          committed = null;
-          queuedToken = 0;
-          token += 1;
+        changed = pendingKey !== null && key !== pendingKey;
+        if (!immediate && anchor && namesDiffer(anchor, sample) && phoneUsable(anchor.phoneRaw)) {
+          if (!sample.phoneRaw || sample.phoneRaw === anchor.phoneRaw) {
+            if (!nameSwitchAt) nameSwitchAt = now;
+          } else {
+            nameSwitchAt = 0;
+          }
+        } else if (!immediate && anchor && !namesDiffer(anchor, sample)) {
+          nameSwitchAt = 0;
         }
+        if (committed && committed.key !== key) dropCommitted();
         if (immediate) {
-          committed = null;
-          queuedToken = 0;
-          pendingHold = false;
+          dropCommitted();
+          nameSwitchAt = 0;
         }
         pendingKey = key;
-        since = immediate ? now - Math.max(stableMs, phoneLagMs) : now;
+        since = immediate ? now - Math.max(stableMs, phoneLagMs, samePhoneMs) : now;
       }
 
-      const carriedToken = committed ? committed.token : token;
-      pendingPatient = copyPatient(sample, carriedToken);
+      pendingPatient = copyPatient(sample, committed ? committed.token : token);
 
-      const age = now - since;
-      if (age < waitNeeded()) {
-        mode = 'settling';
-        return snapshot(now);
+      if (!immediate && holdsPreviousPhone(sample)) {
+        if (holdRemaining(now) > 0) {
+          mode = 'settling';
+          return snapshot(now, { changed });
+        }
+        dropCommitted();
+        mode = 'same-phone';
+        return snapshot(now, { changed });
       }
 
       if (!hasName(sample)) {
-        if (committed) token += 1;
-        committed = null;
-        queuedToken = 0;
+        if (stableRemaining(now) > 0 && !immediate) {
+          mode = 'settling';
+          return snapshot(now, { changed });
+        }
+        // Anchor stays so a different name cannot inherit its phone.
+        dropCommitted();
         mode = 'empty';
-        return snapshot(now);
+        return snapshot(now, { changed });
       }
 
       if (!phoneUsable(sample.phoneRaw)) {
-        committed = {
-          key,
-          token: committed && committed.key === key ? committed.token : (token += 1),
-          patient: null,
-        };
-        committed.patient = copyPatient(sample, committed.token);
-        queuedToken = committed.token;
+        if (phoneWaitRemaining(now) > 0 && !immediate) {
+          mode = 'settling';
+          return snapshot(now, { changed });
+        }
+        const nextToken = committed && committed.key === key ? committed.token : (token += 1);
+        committed = { key, token: nextToken, patient: null };
+        committed.patient = copyPatient(sample, nextToken);
+        queuedToken = nextToken;
         mode = 'no-phone';
-        return snapshot(now);
+        return snapshot(now, { changed });
+      }
+
+      if (stableRemaining(now) > 0 && !immediate) {
+        mode = 'settling';
+        return snapshot(now, { changed });
       }
 
       if (!committed || committed.key !== key) {
         token += 1;
         committed = { key, token, patient: copyPatient(sample, token) };
+        anchor = copyPatient(sample, token);
+        nameSwitchAt = 0;
         mode = 'awaiting';
-        return snapshot(now);
+        return snapshot(now, { changed });
       }
 
       committed.patient = copyPatient(sample, committed.token);
-      return snapshot(now);
+      anchor = copyPatient(sample, committed.token);
+      if (mode !== 'settled') mode = 'awaiting';
+      return snapshot(now, { changed });
     }
 
     function force(patient, now) {
       pendingKey = null;
-      pendingHold = false;
+      nameSwitchAt = 0;
       committed = null;
       queuedToken = 0;
       return note(patient, now || 0, { immediate: true });
@@ -239,13 +311,20 @@
       if (committed && committed.token === lookupToken) queuedToken = lookupToken;
     }
 
+    function cancelQueuedLookup(lookupToken) {
+      if (queuedToken === lookupToken && mode === 'awaiting') queuedToken = 0;
+    }
+
     function matchesLookup(message) {
-      if (!committed) return false;
+      if (!committed || !committed.patient) return false;
       if (mode !== 'awaiting' && mode !== 'settled') return false;
       const messageToken = Number(message?.lookupToken);
       if (!Number.isFinite(messageToken) || messageToken !== committed.token) return false;
-      const phone = message?.phoneRaw ?? message?.patient?.phoneRaw ?? '';
-      return String(phone) === String(committed.patient.phoneRaw || '');
+      const phone = String(message?.phoneRaw ?? message?.patient?.phoneRaw ?? '').replace(/\D/g, '');
+      if (phone !== String(committed.patient.phoneRaw || '').replace(/\D/g, '')) return false;
+      const msgPatient = message?.patient;
+      if (msgPatient && namesDiffer(msgPatient, committed.patient)) return false;
+      return true;
     }
 
     function acceptLookup(message) {
@@ -269,6 +348,7 @@
       reset,
       force,
       markLookupQueued,
+      cancelQueuedLookup,
       matchesLookup,
       acceptLookup,
       current,
@@ -278,8 +358,10 @@
   return {
     STABLE_MS,
     PHONE_LAG_MS,
+    SAME_PHONE_MS,
     fieldText,
     readPatientFields,
+    extractPhoneDigits,
     phoneUsable,
     phoneBlockedMessage,
     createPatientGate,
