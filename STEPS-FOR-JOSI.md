@@ -37,9 +37,9 @@ sh scripts/pack-extension.sh
 
 Équivalents : `node scripts/package.mjs`, ou sous Windows `powershell -File scripts/package.ps1`.
 
-Le fichier est `dist/notirx-1.3.5.zip` (le numéro suit `manifest.json`). Ne pas le commettre. Il s’ouvre directement sur `manifest.json`, pas sur un dossier parent. Il ne contient pas les tests, `store/`, ni `.git`.
+Le fichier est `dist/notirx-1.3.6.zip` (le numéro suit `manifest.json`). Ne pas le commettre. Il s’ouvre directement sur `manifest.json`, pas sur un dossier parent. Il ne contient pas les tests, `store/`, ni `.git`.
 
-La version **1.3.5** peut être le premier envoi : aucune fiche n’a encore été publiée. Chaque envoi suivant devra avoir un numéro plus élevé.
+La version **1.3.5** pouvait être le premier envoi : aucune fiche n’avait encore été publiée. La version courante est **1.3.6**. Chaque envoi suivant devra avoir un numéro plus élevé.
 
 ## 5. Chrome — fiche non répertoriée
 

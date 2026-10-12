@@ -1,6 +1,6 @@
 # NotiRx — extension Priorx
 
-Manifest **1.3.5**. Chrome and Microsoft Edge (Chromium) from version 109. The widget is the blue **Rx** tab on the Priorx patient file.
+Manifest **1.3.6**. Chrome and Microsoft Edge (Chromium) from version 109. The widget is the blue **Rx** tab on the Priorx patient file.
 
 Load it unpacked to try a build. Publishing and force-install are in `DISTRIBUTION.md`. Nothing in this repository uploads the extension.
 
@@ -11,7 +11,7 @@ Load it unpacked to try a build. Publishing and force-install are in `DISTRIBUTI
 3. Turn on **Developer mode** (mode développeur).
 4. Choose **Load unpacked** (Charger l’extension non empaquetée) and select this folder.
 5. Open the Options page if it appears, and save the API address and the API key.
-6. Open Priorx (`https://4502812786.priorx.ca`) and press F5. The version on the extension card should read **1.3.5**.
+6. Open Priorx (`https://4502812786.priorx.ca`) and press F5. The version on the extension card should read **1.3.6**.
 
 Chrome is the same steps on `chrome://extensions`.
 

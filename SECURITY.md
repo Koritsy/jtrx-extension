@@ -29,13 +29,13 @@ Options and policy still accept any https URL. A base URL on another host (anoth
 
 The script is injected only on `https://4502812786.priorx.ca`, including pages under `/4502812786.Web/`. It draws the widget only when the patient file is on screen (the page contains `BA01_LastName`).
 
-Priorx fills the name and the phone in separate steps. The widget stays on « Vérification… » (the name is shown once it is on the page) and does not show the consent prompt or the send buttons until that name and phone have stopped changing and `POST /consent/lookup` for that phone has returned. A reply for an earlier file is ignored.
+Priorx fills the name and the phone in separate steps. As soon as the last or first name changes, the widget clears the previous patient's name, consent, and send buttons and stays on « Vérification… ». It does not call `POST /consent/lookup` until the new name and the new phone have both stopped changing for about half a second, and it never starts that lookup while the phone is still the previous file's number. If that number is still the same more than three seconds after the name changed, the widget shows « Même numéro — vérifier » and waits for that click (two files can share a phone). A lookup result is applied only when the name and phone still on the page are the ones that were looked up. The same check runs again immediately before a text is sent, and the number sent is the one read from the page at that moment.
 
 | On the page | Used for |
 |---|---|
 | `BA01_LastName` | Shown in the widget on this computer. Stays on this computer. |
 | `BA01_FirstName` | Shown in the widget on this computer. It is not sent to the backend. |
-| `BA01_Info2` | The phone is the part before ` - `, digits only. A street address after ` - ` is left on the page. |
+| `BA01_Info2` | The first phone-shaped number in the field: 10 digits, or 11 digits starting with 1. An address after the number stays on the page. `555-010-0199 - 10 rue Fictive` and `555.555.5555, Quebec` both yield the phone. |
 | `LoginName1` | The signed-in staff name. Sent as `recorded_by` when staff save a yes or no consent, and as `sent_by` when they confirm an SMS (omitted when the field is empty). |
 | `BA01_language` | The span next to the patient name. Priorx shows English as `(AN)` (anglais), not `(EN)`. Text is sent on `POST /notify` as `language`: `EN` when it says AN, ANG, EN, ENG, ANGLAIS, or ENGLISH (parentheses and spaces ignored), and `FR` otherwise. A missing or unreadable span becomes `FR`. A send is not blocked. The id is lowercase; `#BA01_Language` does not match. |
 
@@ -92,7 +92,7 @@ Do not commit the key, and do not put it in `manifest.json`.
 The copy installed from a USB stick is loaded unpacked. It is not published to the Chrome Web Store or to Edge Add-ons. Store and force-install steps are in `DISTRIBUTION.md`. This pull request does not publish the extension.
 
 1. Copy this folder to the pharmacy computer. Do not copy a `config.js`. The manifest is already limited to `https://4502812786.priorx.ca/*`.
-2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.5**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
+2. Chrome or Edge → Extensions → turn on Developer mode → Load unpacked → select the folder. To update, replace the files and press Reload on the NotiRx card. The version on the card should read **1.3.6**. After Reload, press F5 on the Priorx tab. The old content script otherwise keeps running with no extension behind it.
 3. If the key is missing, the Options page opens. Paste the API URL and the API key that used to live in `config.js` on that computer. Save.
 4. Reload the Priorx tab and open a patient file (`/4502812786.Web/index.aspx`). The blue **Rx** tab should appear on the right. Each of the four SMS buttons still asks for a yes before a text is sent. Patients who replied OUI are on the **Réponses** tab. Texts for the open file are on the **Historique** tab.
 

@@ -268,3 +268,217 @@ test('phone block text matches the notify error helper', () => {
     assert.equal(patient.phoneBlockedMessage(raw), phoneBlockedFromNotify(raw), raw);
   }
 });
+
+test('readPatientFields takes the first phone-shaped number, including non-DSQ text', () => {
+  const doc = docWith({
+    BA01_LastName: 'Untel',
+    BA01_FirstName: ', Jean',
+    BA01_Info2: '555.555.5555, Quebec',
+    LoginName1: 'DEMO',
+  });
+  assert.equal(patient.readPatientFields(doc).lastName, 'Untel');
+  assert.equal(patient.readPatientFields(doc).firstName, 'Jean');
+  assert.equal(patient.readPatientFields(doc).phoneRaw, '5555555555');
+  assert.equal(patient.extractPhoneDigits('555.555.5555, Quebec'), '5555555555');
+  assert.equal(patient.extractPhoneDigits('555-010-0199 - 123 rue Fictive'), '5550100199');
+  assert.equal(patient.extractPhoneDigits('(555) 010-0199, Quebec'), '5550100199');
+  assert.equal(patient.extractPhoneDigits('1-555-010-0199 - 10 rue Fictive'), '15550100199');
+  assert.equal(patient.extractPhoneDigits('1 555 010 0199'), '15550100199');
+  assert.equal(patient.extractPhoneDigits('123 rue Fictive, Quebec'), '');
+  assert.equal(patient.extractPhoneDigits(''), '');
+  doc.setText('BA01_LastName', 'Alpha');
+  doc.setText('BA01_FirstName', 'Anne');
+  doc.setText('BA01_Info2', '555-010-0199 - 123 rue Fictive');
+  assert.equal(patient.readPatientFields(doc).phoneRaw, '5550100199');
+  assert.equal(patient.readPatientFields(doc).lastName, 'Alpha');
+  assert.equal(patient.readPatientFields(doc).firstName, 'Anne');
+});
+
+test('a 4s phone lag never looks up the previous number under the new name', () => {
+  const gate = patient.createPatientGate({ stableMs: 100, phoneLagMs: 2000, samePhoneMs: 3000 });
+  const anne = person('Alpha', 'Anne', '5550100199');
+  const jean = person('Untel', 'Jean', '5550100199');
+  gate.note(anne, 0);
+  const ready = gate.note(anne, 100);
+  assert.equal(ready.startLookup, true);
+  const tokenA = ready.lookupToken;
+  gate.markLookupQueued(tokenA);
+  assert.equal(gate.acceptLookup({ lookupToken: tokenA, phoneRaw: '5550100199' }).ok, true);
+
+  const switched = gate.note(jean, 150);
+  assert.equal(switched.mode, 'settling');
+  assert.equal(switched.startLookup, false);
+  assert.equal(switched.changed, true);
+  assert.equal(switched.allowsActions, false);
+  assert.equal(switched.patient.lastName, 'Untel');
+  assert.equal(gate.acceptLookup({
+    lookupToken: tokenA,
+    phoneRaw: '5550100199',
+    state: 'OPTED_IN',
+    patient: jean,
+  }).ok, false);
+
+  const atOldLag = gate.note(jean, 150 + 2000);
+  assert.equal(atOldLag.startLookup, false);
+  assert.equal(atOldLag.mode, 'settling');
+  assert.notEqual(atOldLag.mode, 'awaiting');
+
+  const atFour = gate.note(jean, 150 + 4000);
+  assert.equal(atFour.mode, 'same-phone');
+  assert.equal(atFour.startLookup, false);
+  assert.equal(atFour.allowsActions, false);
+  assert.equal(atFour.patient.lastName, 'Untel');
+  assert.equal(atFour.patient.firstName, 'Jean');
+  assert.equal(atFour.patient.phoneRaw, '5550100199');
+  assert.equal(gate.acceptLookup({
+    lookupToken: atFour.lookupToken,
+    phoneRaw: '5550100199',
+    state: 'OPTED_IN',
+    patient: jean,
+  }).ok, false);
+  assert.equal(gate.current().mode, 'same-phone');
+
+  const forced = gate.force(jean, 4300);
+  assert.equal(forced.mode, 'awaiting');
+  assert.equal(forced.startLookup, true);
+  assert.equal(forced.patient.lastName, 'Untel');
+  assert.equal(forced.patient.phoneRaw, '5550100199');
+  assert.notEqual(forced.lookupToken, tokenA);
+  assert.equal(gate.acceptLookup({
+    lookupToken: tokenA,
+    phoneRaw: '5550100199',
+    state: 'OPTED_IN',
+  }).ok, false);
+  assert.equal(gate.acceptLookup({
+    lookupToken: forced.lookupToken,
+    phoneRaw: '5550100199',
+    patient: jean,
+  }).ok, true);
+});
+
+test('phone-first switch waits until the new name and phone are both still', () => {
+  const gate = patient.createPatientGate({ stableMs: 500, phoneLagMs: 2000, samePhoneMs: 3000 });
+  const anne = person('Alpha', 'Anne', '5550100199');
+  gate.note(anne, 0);
+  const ready = gate.note(anne, 500);
+  gate.markLookupQueued(ready.lookupToken);
+  gate.acceptLookup({ lookupToken: ready.lookupToken, phoneRaw: '5550100199' });
+
+  let view = gate.note(person('Alpha', 'Anne', '5550100198'), 1000);
+  assert.equal(view.mode, 'settling');
+  assert.equal(view.startLookup, false);
+  assert.equal(view.allowsActions, false);
+
+  view = gate.note(person('Untel', 'Anne', '5550100198'), 1200);
+  assert.equal(view.startLookup, false);
+  view = gate.note(person('Untel', 'Jean', '5550100198'), 1400);
+  assert.equal(view.mode, 'settling');
+  assert.equal(view.startLookup, false);
+  assert.equal(gate.acceptLookup({
+    lookupToken: ready.lookupToken,
+    phoneRaw: '5550100199',
+    state: 'OPTED_IN',
+  }).ok, false);
+
+  view = gate.note(person('Untel', 'Jean', '5550100198'), 1900);
+  assert.equal(view.startLookup, true);
+  assert.equal(view.patient.lastName, 'Untel');
+  assert.equal(view.patient.firstName, 'Jean');
+  assert.equal(view.patient.phoneRaw, '5550100198');
+  assert.notEqual(view.lookupToken, ready.lookupToken);
+});
+
+test('a different name with the same phone waits for an explicit verify', () => {
+  const gate = patient.createPatientGate({ stableMs: 100, phoneLagMs: 2000, samePhoneMs: 3000 });
+  const anne = person('Alpha', 'Anne', '5550100199');
+  gate.note(anne, 0);
+  const ready = gate.note(anne, 100);
+  gate.markLookupQueued(ready.lookupToken);
+  gate.acceptLookup({ lookupToken: ready.lookupToken, phoneRaw: '5550100199' });
+
+  const next = gate.note(person('Untel', 'Jean', '5550100199'), 200);
+  assert.equal(next.startLookup, false);
+  const held = gate.note(person('Untel', 'Jean', '5550100199'), 200 + 3000);
+  assert.equal(held.mode, 'same-phone');
+  assert.equal(held.startLookup, false);
+  assert.equal(held.patient.lastName, 'Untel');
+  const forced = gate.force(person('Untel', 'Jean', '5550100199'), 3300);
+  assert.equal(forced.startLookup, true);
+  assert.equal(forced.patient.phoneRaw, '5550100199');
+  assert.equal(forced.patient.lastName, 'Untel');
+});
+
+test('a cleared name drops the previous consent and the same file can be looked up again', () => {
+  const gate = patient.createPatientGate({ stableMs: 100, phoneLagMs: 2000, samePhoneMs: 3000 });
+  const anne = person('Alpha', 'Anne', '5550100199');
+  gate.note(anne, 0);
+  const ready = gate.note(anne, 100);
+  gate.markLookupQueued(ready.lookupToken);
+  gate.acceptLookup({ lookupToken: ready.lookupToken, phoneRaw: '5550100199' });
+
+  const clearing = gate.note(person('', '', '5550100199'), 200);
+  assert.equal(clearing.mode, 'settling');
+  assert.equal(clearing.allowsActions, false);
+  assert.equal(gate.acceptLookup({
+    lookupToken: ready.lookupToken,
+    phoneRaw: '5550100199',
+    state: 'OPTED_IN',
+  }).ok, false);
+
+  gate.note(person('', '', ''), 300);
+  const empty = gate.note(person('', '', ''), 400);
+  assert.equal(empty.mode, 'empty');
+  assert.equal(empty.patient, null);
+  assert.equal(empty.startLookup, false);
+
+  const back = gate.note(anne, 500);
+  assert.equal(back.startLookup, false);
+  const again = gate.note(anne, 600);
+  assert.equal(again.startLookup, true);
+  assert.equal(again.patient.lastName, 'Alpha');
+  assert.equal(again.patient.phoneRaw, '5550100199');
+  assert.notEqual(again.lookupToken, ready.lookupToken);
+});
+
+test('after a clear, a new name on the previous phone does not look itself up', () => {
+  const gate = patient.createPatientGate({ stableMs: 100, phoneLagMs: 2000, samePhoneMs: 3000 });
+  const anne = person('Alpha', 'Anne', '5550100199');
+  gate.note(anne, 0);
+  const ready = gate.note(anne, 100);
+  gate.markLookupQueued(ready.lookupToken);
+  gate.acceptLookup({ lookupToken: ready.lookupToken, phoneRaw: '5550100199' });
+
+  gate.note(person('', '', ''), 200);
+  const empty = gate.note(person('', '', ''), 300);
+  assert.equal(empty.mode, 'empty');
+
+  const next = gate.note(person('Untel', 'Jean', '5550100199'), 400);
+  assert.equal(next.startLookup, false);
+  const held = gate.note(person('Untel', 'Jean', '5550100199'), 400 + 3000);
+  assert.equal(held.mode, 'same-phone');
+  assert.equal(held.startLookup, false);
+  assert.equal(gate.acceptLookup({
+    lookupToken: ready.lookupToken,
+    phoneRaw: '5550100199',
+    patient: { lastName: 'Alpha', firstName: 'Anne' },
+  }).ok, false);
+});
+
+test('a lookup whose name does not match the committed file is refused', () => {
+  const gate = patient.createPatientGate({ stableMs: 10, phoneLagMs: 10, samePhoneMs: 3000 });
+  const anne = person('Alpha', 'Anne', '5550100199');
+  gate.note(anne, 0);
+  const ready = gate.note(anne, 10);
+  gate.markLookupQueued(ready.lookupToken);
+  assert.equal(gate.acceptLookup({
+    lookupToken: ready.lookupToken,
+    phoneRaw: '5550100199',
+    patient: { lastName: 'Untel', firstName: 'Jean' },
+  }).ok, false);
+  assert.equal(gate.current().mode, 'awaiting');
+  assert.equal(gate.acceptLookup({
+    lookupToken: ready.lookupToken,
+    phoneRaw: '5550100199',
+    patient: { lastName: 'Alpha', firstName: 'Anne' },
+  }).ok, true);
+});
