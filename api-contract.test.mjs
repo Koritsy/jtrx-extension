@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
   assertSafeRequest,
@@ -186,7 +190,7 @@ test('manifest grants storage, this Priorx host, and the API Gateway host', () =
   assert.equal(manifest.key, undefined);
   assert.ok(manifest.description.length > 0);
   assert.ok(manifest.description.length <= 132, manifest.description.length);
-  for (const size of ['16', '48', '128']) {
+  for (const size of ['16', '32', '48', '128']) {
     assert.equal(manifest.icons[size], `icons/icon${size}.png`);
     assert.deepEqual(
       pngSize(readFileSync(new URL(`./icons/icon${size}.png`, import.meta.url))),
@@ -325,8 +329,18 @@ test('extension source no longer intercepts page requests or reads config.js', (
   assert.equal(content.includes('firstName: currentPatient.firstName'), false);
 });
 
+test('options keeps the API key masked in local storage', () => {
+  const html = readFileSync(new URL('./options.html', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('./options.js', import.meta.url), 'utf8');
+  assert.match(html, /id="api-key"[\s\S]*?type="password"/);
+  assert.equal(html.includes('chrome.storage.sync'), false);
+  assert.equal(js.includes('chrome.storage.sync'), false);
+  assert.equal(js.includes('chrome.storage.local.set'), true);
+  assert.equal(js.includes('chrome.storage.managed'), true);
+});
+
 test('store zip lists the widget files and leaves tests out', () => {
-  const pack = readFileSync(new URL('./scripts/pack-extension.sh', import.meta.url), 'utf8');
+  const pack = readFileSync(new URL('./scripts/package.mjs', import.meta.url), 'utf8');
   for (const file of [
     'manifest.json',
     'background.js',
@@ -339,10 +353,45 @@ test('store zip lists the widget files and leaves tests out', () => {
     'api-contract.mjs',
     'runtime-config.mjs',
     'managed_schema.json',
+    'options.html',
+    'options.js',
+    'icons/icon32.png',
   ]) {
     assert.equal(pack.includes(file), true, file);
   }
-  for (const excluded of ['test.html', 'api-contract.test.mjs', 'poll-schedule.test.mjs', 'SECURITY.md', 'DISTRIBUTION.md']) {
-    assert.equal(pack.includes(excluded), false, excluded);
+  for (const excluded of ['test.html', 'api-contract.test.mjs', 'poll-schedule.test.mjs', 'SECURITY.md', 'DISTRIBUTION.md', 'STEPS-FOR-JOSI.md', 'store/']) {
+    assert.equal(pack.includes(`'${excluded}'`) || pack.includes(`"${excluded}"`), false, excluded);
+  }
+  const shell = readFileSync(new URL('./scripts/pack-extension.sh', import.meta.url), 'utf8');
+  assert.equal(shell.includes('package.mjs'), true);
+});
+
+test('store zip opens onto manifest.json and omits tests and docs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'notirx-zip-'));
+  const cwd = fileURLToPath(new URL('.', import.meta.url));
+  try {
+    execFileSync(process.execPath, ['scripts/package.mjs'], {
+      cwd,
+      env: { ...process.env, NOTIRX_DIST: dir },
+      encoding: 'utf8',
+    });
+    const version = JSON.parse(readFileSync(new URL('./manifest.json', import.meta.url), 'utf8')).version;
+    const zipPath = join(dir, `notirx-${version}.zip`);
+    const names = execFileSync('python3', ['-c', [
+      'import zipfile, sys',
+      'z = zipfile.ZipFile(sys.argv[1])',
+      'bad = z.testzip()',
+      'if bad: raise SystemExit(bad)',
+      'print("\\n".join(z.namelist()))',
+    ].join('\n'), zipPath], { encoding: 'utf8' }).trim().split('\n');
+    assert.equal(names.includes('manifest.json'), true);
+    assert.equal(names.some((name) => name.startsWith('/') || name.includes('..')), false);
+    assert.equal(names.includes('icons/icon32.png'), true);
+    for (const banned of ['test.html', 'api-contract.test.mjs', 'SECURITY.md', 'DISTRIBUTION.md', 'STEPS-FOR-JOSI.md', 'scripts/package.mjs']) {
+      assert.equal(names.includes(banned), false, banned);
+    }
+    assert.equal(names.some((name) => name.startsWith('store/')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

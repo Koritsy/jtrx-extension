@@ -8,7 +8,7 @@ Today the extension is copied on a USB stick and loaded unpacked in developer mo
 
 Deux façons de quitter le mode développeur. Rien dans ce dépôt ne publie l’extension.
 
-1. **Chrome Web Store (non répertoriée) ou modules complémentaires Edge.** Josi crée le compte, paie les frais Google une seule fois (5 $ US à l’écran d’inscription; Edge ne demande pas de frais), emballe avec `sh scripts/pack-extension.sh`, puis téléverse le zip elle-même. La fiche reste hors recherche. Les mises à jour arrivent toutes seules. Dans les questions de confidentialité : le numéro de téléphone, le nom de la personne connectée, le type de message et la langue (FR ou EN) partent vers NotiRx. Le prénom et le nom de famille restent sur l’ordinateur. Le prénom n’est plus envoyé.
+1. **Chrome Web Store (non répertoriée) ou modules complémentaires Edge.** Josi crée le compte, paie les frais Google une seule fois (5 $ US à l’écran d’inscription; Edge ne demande pas de frais), emballe avec `sh scripts/pack-extension.sh` (ou `node scripts/package.mjs`, ou `scripts/package.ps1` sous Windows), puis téléverse le zip elle-même. La fiche reste hors recherche. Les mises à jour arrivent toutes seules. Les textes de fiche, la politique de confidentialité et les étapes dans l’ordre sont dans `store/` et `STEPS-FOR-JOSI.md`. Dans les questions de confidentialité : le numéro de téléphone, le nom de la personne connectée, le type de message et la langue (FR ou EN) partent vers NotiRx. Le prénom et le nom de famille restent sur l’ordinateur. Le prénom n’est plus envoyé.
 2. **Installation forcée par l’informatique de Familiprix** (`ExtensionInstallForcelist`), après qu’une fiche existe. La clé API peut être poussée par stratégie (`apiBaseUrl` et `apiKey`, schéma `managed_schema.json`). La saisie manuelle dans Options continue de fonctionner quand aucune stratégie n’est définie.
 
 ## This store’s Priorx host
@@ -30,10 +30,10 @@ After a pharmacist installs from the store, they cannot edit `manifest.json`. Ad
 The privacy-policy link is a second placeholder. It is not a manifest field. Chrome and Edge ask for it in the developer dashboard, and they reject an unknown key in `manifest.json`.
 
 ```
-PRIVACY_POLICY_URL=https://FILL-IN-PRIVACY-POLICY-URL.example/notirx
+PRIVACY_POLICY_URL=https://www.automationjt.com/notirx/confidentialite
 ```
 
-Host a page at a public `https` address that anyone can open without logging in, then paste that address into the dashboard field. The `.example` address above is only a marker. It must not be submitted.
+That address is the suggested public page. It is not live until someone publishes `store/CONFIDENTIALITE.md` there. Host the page at a public `https` address that anyone can open without logging in, then paste that address into the dashboard field. Do not submit a placeholder.
 
 The page has to match what the extension actually does (`SECURITY.md`). A draft Josi can edit and host:
 
@@ -52,7 +52,7 @@ The manifest version is **1.3.5**. Chrome and Edge accept only a higher version 
 
 ## Icons
 
-Checked in this package: `icons/icon16.png` is 16×16, `icons/icon48.png` is 48×48, and `icons/icon128.png` is 128×128. All three are square PNGs and are referenced by the manifest. On the store form, upload `icons/icon128.png` as the store icon. Also add one screenshot of the blue Rx tab on a Priorx patient file, at 1280×800 or 640×400. The screenshot must not show a real patient’s name, phone number, or address.
+Checked in this package: `icons/icon16.png` is 16×16, `icons/icon32.png` is 32×32, `icons/icon48.png` is 48×48, and `icons/icon128.png` is 128×128. All four are square PNGs and are referenced by the manifest. On the store form, upload `icons/icon128.png` as the store icon. Also add one screenshot of the blue Rx tab on a Priorx patient file, at 1280×800 or 640×400. The screenshot must not show a real patient’s name, phone number, or address.
 
 ## Zip for the stores
 

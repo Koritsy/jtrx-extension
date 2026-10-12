@@ -26,7 +26,7 @@ To update an unpacked copy, replace the files, press **Reload** on the NotiRx ca
 
 ## Force-install or an unlisted store
 
-The signed package comes from the store, not from a key in this repository. `sh scripts/pack-extension.sh` writes `dist/notirx-<version>.zip`. Upload that zip yourself.
+The signed package comes from the store, not from a key in this repository. `sh scripts/pack-extension.sh` (same as `node scripts/package.mjs`) writes `dist/notirx-<version>.zip`. Upload that zip yourself. The ordered steps, the French listing, and the privacy draft are in `STEPS-FOR-JOSI.md` and `store/`.
 
 - **Chrome Web Store**, visibility **Unlisted**. Force-install with `ExtensionInstallForcelist`:
   `EXTENSION_ID;https://clients2.google.com/service/update2/crx`
